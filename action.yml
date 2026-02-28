@@ -1,0 +1,57 @@
+name: 'Hetzner Deploy Action'
+description: 'Create or update a Hetzner Cloud server and deploy a directory to it.'
+author: 'Julian Kahlert'
+inputs:
+  hcloud_token:
+    description: 'Hetzner API token (store as secret)'
+    required: true
+  server_name:
+    description: 'Logical server name to find or create'
+    required: true
+  project_tag:
+    description: 'Tag used to identify servers shared across repos'
+    required: true
+  image:
+    description: 'Hetzner image slug (default: ubuntu-24.04)'
+    required: false
+    default: 'ubuntu-24.04'
+  server_type:
+    description: 'Hetzner server type (default: cx23)'
+    required: false
+    default: 'cx23'
+  ipv6_only:
+    description: 'If true, provision with IPv6 only (no public IPv4)'
+    required: false
+    default: 'false'
+  public_key:
+    description: 'SSH public key to register on the server'
+    required: true
+  ssh_private_key:
+    description: 'SSH private key for rsync (store as secret)'
+    required: true
+  ssh_user:
+    description: 'SSH user for connecting to the server'
+    required: false
+    default: 'root'
+  service_name:
+    description: 'Systemd service name to restart after deploy'
+    required: false
+  source_dir:
+    description: 'Directory in the workspace to deploy'
+    required: false
+    default: '.'
+  target_dir:
+    description: 'Target directory on the VPS where files will be placed'
+    required: false
+    default: '/opt/app'
+outputs:
+  server_ip:
+    description: 'Public IP address of the server (IPv4 by default; IPv6 when ipv6_only is true)'
+  server_id:
+    description: 'Hetzner server ID'
+  server_status:
+    description: 'Server status after provisioning'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

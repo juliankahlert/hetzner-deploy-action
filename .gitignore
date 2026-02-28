@@ -44,6 +44,9 @@ jspm_packages/
 # Snowpack dependency directory (https://snowpack.dev/)
 web_modules/
 
+# TypeScript compiled output (intermediate; dist/ is the final bundle)
+lib/
+
 # TypeScript cache
 *.tsbuildinfo
 
@@ -80,7 +83,8 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+# dist — do NOT ignore; GitHub Actions requires dist/ to be committed
+# dist
 
 # Gatsby files
 .cache/
@@ -137,3 +141,5 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+opencode.json

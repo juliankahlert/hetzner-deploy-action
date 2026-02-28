@@ -1,0 +1,26 @@
+name: Example Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Hetzner
+        uses: ./
+        with:
+          hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          server_name: my-app-server
+          project_tag: my-project
+          image: ubuntu-24.04
+          server_type: cx23
+          ipv6_only: 'false'
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          ssh_user: root
+          service_name: my-app
+          source_dir: '.'
+          target_dir: /opt/app
