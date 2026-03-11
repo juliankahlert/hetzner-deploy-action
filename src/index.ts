@@ -4,7 +4,7 @@ import { ensureSshKey } from "./hetzner/sshKeys.js";
 import { findOrCreateServer } from "./hetzner/findOrCreateServer.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { remoteSetup } from "./deploy/remoteSetup.js";
-import { validateInputs } from "./validate.js";
+import { validateInputs, type ValidatableInputs } from "./validate.js";
 
 interface ActionInputs {
   hcloudToken: string;
@@ -22,19 +22,35 @@ interface ActionInputs {
 }
 
 function parseInputs(): ActionInputs {
+  // Collect raw string values — defaults come from action.yml exclusively.
+  const raw: ValidatableInputs = {
+    serverName: core.getInput("server_name", { required: true }),
+    sshUser: core.getInput("ssh_user"),
+    sourceDir: core.getInput("source_dir"),
+    targetDir: core.getInput("target_dir"),
+    serviceName: core.getInput("service_name"),
+    image: core.getInput("image"),
+    serverType: core.getInput("server_type"),
+    projectTag: core.getInput("project_tag", { required: true }),
+    ipv6Only: core.getInput("ipv6_only"),
+  };
+
+  // Validate all non-secret inputs before any cloud API call.
+  validateInputs(raw);
+
   return {
     hcloudToken: core.getInput("hcloud_token", { required: true }),
-    serverName: core.getInput("server_name", { required: true }),
-    projectTag: core.getInput("project_tag", { required: true }),
-    image: core.getInput("image") || "ubuntu-24.04",
-    serverType: core.getInput("server_type") || "cx23",
-    ipv6Only: core.getInput("ipv6_only") === "true",
+    serverName: raw.serverName,
+    projectTag: raw.projectTag,
+    image: raw.image,
+    serverType: raw.serverType,
+    ipv6Only: raw.ipv6Only === "true",
     publicKey: core.getInput("public_key", { required: true }),
     sshPrivateKey: core.getInput("ssh_private_key", { required: true }),
-    sshUser: core.getInput("ssh_user") || "root",
-    serviceName: core.getInput("service_name"),
-    sourceDir: core.getInput("source_dir") || ".",
-    targetDir: core.getInput("target_dir") || "/opt/app",
+    sshUser: raw.sshUser,
+    serviceName: raw.serviceName,
+    sourceDir: raw.sourceDir,
+    targetDir: raw.targetDir,
   };
 }
 
@@ -67,7 +83,6 @@ function logInputs(inputs: ActionInputs): void {
 
 async function run(): Promise<void> {
   const inputs = parseInputs();
-  validateInputs(inputs);
 
   maskSecrets(inputs);
   logInputs(inputs);

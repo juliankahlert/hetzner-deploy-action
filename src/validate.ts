@@ -1,11 +1,15 @@
 import * as core from "@actions/core";
 
-interface ValidatableInputs {
+export interface ValidatableInputs {
   serverName: string;
   sshUser: string;
   sourceDir: string;
   targetDir: string;
   serviceName: string;
+  image: string;
+  serverType: string;
+  projectTag: string;
+  ipv6Only: string;
 }
 
 /** Allowlist patterns — each must match the entire value. */
@@ -47,6 +51,30 @@ const rules: {
     hint: "Must start with alphanumeric; only letters, digits, dots, hyphens, underscores, @ (max 256 chars).",
     optional: true,
   },
+  {
+    field: "image",
+    label: "image",
+    pattern: /^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/,
+    hint: "Must start with a letter; only letters, digits, dots, hyphens, underscores (max 64 chars).",
+  },
+  {
+    field: "serverType",
+    label: "server_type",
+    pattern: /^[a-z]{2,4}[0-9]{1,3}(-[a-z0-9]+)?$/,
+    hint: "Must be a valid Hetzner server type slug, e.g. cx23, cpx11, cx22-dedicated.",
+  },
+  {
+    field: "projectTag",
+    label: "project_tag",
+    pattern: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$/,
+    hint: "Must start with alphanumeric; only letters, digits, dots, hyphens, underscores (max 255 chars).",
+  },
+  {
+    field: "ipv6Only",
+    label: "ipv6_only",
+    pattern: /^(true|false)$/,
+    hint: 'Must be exactly "true" or "false".',
+  },
 ];
 
 /**
@@ -61,12 +89,14 @@ export function validateInputs(inputs: ValidatableInputs): void {
       if (rule.optional) continue;
       // Required fields are enforced by core.getInput({ required: true }),
       // but guard here too for safety.
-      throw new Error(`Input "${rule.label}" is required but was empty.`);
+      throw new Error(
+        `INPUT_VALIDATION_ Input "${rule.label}" is required but was empty.`,
+      );
     }
 
     if (!rule.pattern.test(value)) {
       throw new Error(
-        `Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`,
+        `INPUT_VALIDATION_ Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`,
       );
     }
   }

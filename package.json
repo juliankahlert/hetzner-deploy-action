@@ -5,7 +5,7 @@
   "description": "Create or update a Hetzner Cloud server and deploy a directory to it.",
   "scripts": {
     "build": "tsc && ncc build lib/index.js -o dist",
-    "test": "echo \"No tests yet\" && exit 0"
+    "test": "vitest run"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
@@ -16,7 +16,8 @@
   "devDependencies": {
     "@types/node": "^22.13.0",
     "@vercel/ncc": "^0.38.3",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
   },
   "license": "MIT"
 }

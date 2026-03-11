@@ -28158,6 +28158,30 @@ const rules = [
         hint: "Must start with alphanumeric; only letters, digits, dots, hyphens, underscores, @ (max 256 chars).",
         optional: true,
     },
+    {
+        field: "image",
+        label: "image",
+        pattern: /^[a-zA-Z][a-zA-Z0-9._-]{0,63}$/,
+        hint: "Must start with a letter; only letters, digits, dots, hyphens, underscores (max 64 chars).",
+    },
+    {
+        field: "serverType",
+        label: "server_type",
+        pattern: /^[a-z]{2,4}[0-9]{1,3}(-[a-z0-9]+)?$/,
+        hint: "Must be a valid Hetzner server type slug, e.g. cx23, cpx11, cx22-dedicated.",
+    },
+    {
+        field: "projectTag",
+        label: "project_tag",
+        pattern: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$/,
+        hint: "Must start with alphanumeric; only letters, digits, dots, hyphens, underscores (max 255 chars).",
+    },
+    {
+        field: "ipv6Only",
+        label: "ipv6_only",
+        pattern: /^(true|false)$/,
+        hint: 'Must be exactly "true" or "false".',
+    },
 ];
 /**
  * Validate user-supplied inputs against strict allowlists.
@@ -28171,10 +28195,10 @@ function validateInputs(inputs) {
                 continue;
             // Required fields are enforced by core.getInput({ required: true }),
             // but guard here too for safety.
-            throw new Error(`Input "${rule.label}" is required but was empty.`);
+            throw new Error(`INPUT_VALIDATION_ Input "${rule.label}" is required but was empty.`);
         }
         if (!rule.pattern.test(value)) {
-            throw new Error(`Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`);
+            throw new Error(`INPUT_VALIDATION_ Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`);
         }
     }
     core.info("Input validation passed.");
@@ -28189,19 +28213,33 @@ function validateInputs(inputs) {
 
 
 function parseInputs() {
+    // Collect raw string values — defaults come from action.yml exclusively.
+    const raw = {
+        serverName: core.getInput("server_name", { required: true }),
+        sshUser: core.getInput("ssh_user"),
+        sourceDir: core.getInput("source_dir"),
+        targetDir: core.getInput("target_dir"),
+        serviceName: core.getInput("service_name"),
+        image: core.getInput("image"),
+        serverType: core.getInput("server_type"),
+        projectTag: core.getInput("project_tag", { required: true }),
+        ipv6Only: core.getInput("ipv6_only"),
+    };
+    // Validate all non-secret inputs before any cloud API call.
+    validateInputs(raw);
     return {
         hcloudToken: core.getInput("hcloud_token", { required: true }),
-        serverName: core.getInput("server_name", { required: true }),
-        projectTag: core.getInput("project_tag", { required: true }),
-        image: core.getInput("image") || "ubuntu-24.04",
-        serverType: core.getInput("server_type") || "cx23",
-        ipv6Only: core.getInput("ipv6_only") === "true",
+        serverName: raw.serverName,
+        projectTag: raw.projectTag,
+        image: raw.image,
+        serverType: raw.serverType,
+        ipv6Only: raw.ipv6Only === "true",
         publicKey: core.getInput("public_key", { required: true }),
         sshPrivateKey: core.getInput("ssh_private_key", { required: true }),
-        sshUser: core.getInput("ssh_user") || "root",
-        serviceName: core.getInput("service_name"),
-        sourceDir: core.getInput("source_dir") || ".",
-        targetDir: core.getInput("target_dir") || "/opt/app",
+        sshUser: raw.sshUser,
+        serviceName: raw.serviceName,
+        sourceDir: raw.sourceDir,
+        targetDir: raw.targetDir,
     };
 }
 function maskSecrets(inputs) {
@@ -28229,7 +28267,6 @@ function logInputs(inputs) {
 }
 async function run() {
     const inputs = parseInputs();
-    validateInputs(inputs);
     maskSecrets(inputs);
     logInputs(inputs);
     // WP2: Hetzner resource provisioning
