@@ -27782,16 +27782,141 @@ async function findOrCreateServer(client, opts) {
 var exec = __nccwpck_require__(5236);
 ;// CONCATENATED MODULE: external "node:fs"
 const external_node_fs_namespaceObject = require("node:fs");
-;// CONCATENATED MODULE: external "node:os"
-const external_node_os_namespaceObject = require("node:os");
 ;// CONCATENATED MODULE: external "node:path"
 const external_node_path_namespaceObject = require("node:path");
+;// CONCATENATED MODULE: external "node:os"
+const external_node_os_namespaceObject = require("node:os");
+;// CONCATENATED MODULE: ./lib/deploy/ssh.js
+
+
+
+
+/* ------------------------------------------------------------------ */
+/*  SSH constants                                                     */
+/* ------------------------------------------------------------------ */
+/** Common SSH options used for both ssh and rsync. */
+const SSH_OPTIONS = [
+    "-o",
+    "StrictHostKeyChecking=accept-new",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+    "-o",
+    "LogLevel=ERROR",
+    "-o",
+    "ConnectTimeout=30",
+];
+/* ------------------------------------------------------------------ */
+/*  Key-file management                                               */
+/* ------------------------------------------------------------------ */
+/**
+ * Write the private key to a temporary file with mode 0600.
+ * Returns the path — caller MUST clean up via `cleanupKeyFile`.
+ */
+function writeKeyFile(privateKey) {
+    const dir = external_node_fs_namespaceObject.mkdtempSync(external_node_path_namespaceObject.join(external_node_os_namespaceObject.tmpdir(), "hda-key-"));
+    const keyPath = external_node_path_namespaceObject.join(dir, "id");
+    const content = privateKey.endsWith("\n") ? privateKey : privateKey + "\n";
+    external_node_fs_namespaceObject.writeFileSync(keyPath, content, { mode: 0o600 });
+    return keyPath;
+}
+/**
+ * Remove the temporary key file and its parent directory.
+ * Throws on failure — callers decide whether to swallow or surface errors.
+ */
+function cleanupKeyFile(keyPath) {
+    external_node_fs_namespaceObject.unlinkSync(keyPath);
+    external_node_fs_namespaceObject.rmdirSync(external_node_path_namespaceObject.dirname(keyPath));
+}
+/**
+ * Manage a temporary SSH key file around an async callback.
+ * Creates the file before `fn`, removes it afterwards (even on error).
+ */
+async function withKeyFile(privateKey, fn) {
+    const keyPath = writeKeyFile(privateKey);
+    try {
+        return await fn(keyPath);
+    }
+    finally {
+        try {
+            cleanupKeyFile(keyPath);
+        }
+        catch {
+            /* best-effort */
+        }
+    }
+}
+/* ------------------------------------------------------------------ */
+/*  Host formatting                                                   */
+/* ------------------------------------------------------------------ */
+/**
+ * Format a host string for SSH — brackets raw IPv6 addresses.
+ */
+function formatSshHost(host) {
+    return host.includes(":") ? `[${host}]` : host;
+}
+/* ------------------------------------------------------------------ */
+/*  Remote command execution                                          */
+/* ------------------------------------------------------------------ */
+/**
+ * Run a command on the remote host over SSH.
+ *
+ * When `ipv6Only` is true, `-6` is passed to force IPv6. The host is
+ * always bracketed if it contains a colon (raw IPv6 address).
+ *
+ * @returns The combined stdout as a string.
+ */
+async function sshExec(keyPath, user, host, remoteCmd, ipv6Only = false) {
+    const sshArgs = [...SSH_OPTIONS, "-i", keyPath];
+    if (ipv6Only) {
+        sshArgs.push("-6");
+    }
+    const sshHost = formatSshHost(host);
+    sshArgs.push(`${user}@${sshHost}`, remoteCmd);
+    let stdout = "";
+    try {
+        await exec.exec("ssh", sshArgs, {
+            silent: false,
+            listeners: {
+                stdout: (data) => {
+                    stdout += data.toString();
+                },
+            },
+        });
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (ipv6Only) {
+            throw new Error(`SSH failed (IPv6-only mode): ${msg}. ` +
+                "The runner may lack IPv6 connectivity. " +
+                "Use a self-hosted runner with IPv6 or set ipv6_only: false to provision a dual-stack server.");
+        }
+        throw err;
+    }
+    return stdout.trim();
+}
+/* ------------------------------------------------------------------ */
+/*  Shell quoting                                                     */
+/* ------------------------------------------------------------------ */
+/**
+ * Wrap a value in single-quotes for safe interpolation into a remote
+ * shell command.  Any embedded single-quotes are escaped with the
+ * standard `'\''` trick.
+ */
+function shellQuote(s) {
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+//# sourceMappingURL=ssh.js.map
 ;// CONCATENATED MODULE: ./lib/deploy/rsync.js
 
 
 
-
-
+/* ------------------------------------------------------------------ */
+/*  Input validation                                                  */
+/* ------------------------------------------------------------------ */
+/** Allowed characters in an absolute target directory path. */
+const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/\-]+$/;
+/** Allowed characters in an SSH user name. */
+const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.\-]*$/;
 /**
  * Deploy a local directory to a remote server using rsync over SSH.
  *
@@ -27803,27 +27928,25 @@ const external_node_path_namespaceObject = require("node:path");
  */
 async function rsyncDeploy(opts) {
     const { host, user, sourceDir, targetDir, sshKey, ipv6Only = false, port = 22, } = opts;
+    // Validate inputs before writing any key material to disk.
+    if (!SAFE_USER_RE.test(user)) {
+        throw new Error(`rsync: invalid SSH user: ${JSON.stringify(user)}`);
+    }
+    if (!SAFE_PATH_RE.test(targetDir)) {
+        throw new Error(`rsync: invalid target directory: ${JSON.stringify(targetDir)}`);
+    }
     // Normalise source path: ensure trailing slash so rsync copies *contents*.
     const normalisedSource = sourceDir.endsWith("/")
         ? sourceDir
         : `${sourceDir}/`;
     // Write private key to a temp file with strict permissions.
-    const tmpDir = external_node_fs_namespaceObject.mkdtempSync(external_node_path_namespaceObject.join(external_node_os_namespaceObject.tmpdir(), "hda-ssh-"));
-    const keyFile = external_node_path_namespaceObject.join(tmpDir, "deploy_key");
+    const keyFile = writeKeyFile(sshKey);
     try {
-        // Ensure key ends with a newline (some secrets trim it).
-        const keyContent = sshKey.endsWith("\n") ? sshKey : `${sshKey}\n`;
-        external_node_fs_namespaceObject.writeFileSync(keyFile, keyContent, { mode: 0o600 });
         core.info("SSH private key written to temporary file.");
         // Build the SSH command used by rsync.
         const sshParts = [
             "ssh",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "UserKnownHostsFile=/dev/null",
-            "-o",
-            "LogLevel=ERROR",
+            ...SSH_OPTIONS,
             "-i",
             keyFile,
             "-p",
@@ -27836,12 +27959,13 @@ async function rsyncDeploy(opts) {
         // Format remote destination — bracket IPv6 addresses regardless of
         // ipv6Only flag (the server may be IPv6-only even when the flag is false,
         // e.g. reusing an existing server that has no IPv4).
-        const remoteHost = host.includes(":") ? `[${host}]` : host;
+        const remoteHost = formatSshHost(host);
         const destination = `${user}@${remoteHost}:${targetDir}`;
         // Assemble rsync arguments.
         const rsyncArgs = [
             "-avz",
             "--delete",
+            "--protect-args",
             "-e",
             sshCmd,
             normalisedSource,
@@ -27877,8 +28001,7 @@ async function rsyncDeploy(opts) {
     finally {
         // Clean up the temporary key file unconditionally.
         try {
-            external_node_fs_namespaceObject.unlinkSync(keyFile);
-            external_node_fs_namespaceObject.rmdirSync(tmpDir);
+            cleanupKeyFile(keyFile);
             core.info("Temporary SSH key file removed.");
         }
         catch {
@@ -27892,104 +28015,6 @@ async function rsyncDeploy(opts) {
 
 
 
-
-/* ------------------------------------------------------------------ */
-/*  SSH helpers                                                       */
-/* ------------------------------------------------------------------ */
-/** Common SSH options used for both ssh and scp. */
-const SSH_OPTIONS = [
-    "-o",
-    "StrictHostKeyChecking=accept-new",
-    "-o",
-    "UserKnownHostsFile=/dev/null",
-    "-o",
-    "LogLevel=ERROR",
-    "-o",
-    "ConnectTimeout=30",
-];
-/**
- * Write the private key to a temporary file with mode 0600.
- * Returns the path — caller MUST clean up via `cleanupKeyFile`.
- */
-function writeKeyFile(privateKey) {
-    const dir = external_node_fs_namespaceObject.mkdtempSync(external_node_path_namespaceObject.join(external_node_os_namespaceObject.tmpdir(), "hda-key-"));
-    const keyPath = external_node_path_namespaceObject.join(dir, "id");
-    external_node_fs_namespaceObject.writeFileSync(keyPath, privateKey + "\n", { mode: 0o600 });
-    return keyPath;
-}
-/** Remove the temporary key file and its parent directory. */
-function cleanupKeyFile(keyPath) {
-    try {
-        external_node_fs_namespaceObject.unlinkSync(keyPath);
-        external_node_fs_namespaceObject.rmdirSync(external_node_path_namespaceObject.dirname(keyPath));
-    }
-    catch {
-        /* best-effort */
-    }
-}
-/**
- * Run a command on the remote host over SSH.
- *
- * When `ipv6Only` is true, `-6` is passed to force IPv6. The host is
- * always bracketed if it contains a colon (raw IPv6 address).
- *
- * @returns The combined stdout as a string.
- */
-async function sshExec(keyPath, user, host, remoteCmd, ipv6Only = false) {
-    const sshArgs = [...SSH_OPTIONS, "-i", keyPath];
-    if (ipv6Only) {
-        sshArgs.push("-6");
-    }
-    // Bracket raw IPv6 addresses for the ssh destination regardless of
-    // ipv6Only flag (the server may be IPv6-only even when the flag is false).
-    const sshHost = host.includes(":") ? `[${host}]` : host;
-    sshArgs.push(`${user}@${sshHost}`, remoteCmd);
-    let stdout = "";
-    try {
-        await exec.exec("ssh", sshArgs, {
-            silent: false,
-            listeners: {
-                stdout: (data) => {
-                    stdout += data.toString();
-                },
-            },
-        });
-    }
-    catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (ipv6Only) {
-            throw new Error(`SSH failed (IPv6-only mode): ${msg}. ` +
-                "The runner may lack IPv6 connectivity. " +
-                "Use a self-hosted runner with IPv6 or set ipv6_only: false to provision a dual-stack server.");
-        }
-        throw err;
-    }
-    return stdout.trim();
-}
-/**
- * Manage a temporary SSH key file around an async callback.
- * Creates the file before `fn`, removes it afterwards (even on error).
- */
-async function withKeyFile(privateKey, fn) {
-    const keyPath = writeKeyFile(privateKey);
-    try {
-        return await fn(keyPath);
-    }
-    finally {
-        cleanupKeyFile(keyPath);
-    }
-}
-/* ------------------------------------------------------------------ */
-/*  Shell quoting                                                     */
-/* ------------------------------------------------------------------ */
-/**
- * Wrap a value in single-quotes for safe interpolation into a remote
- * shell command.  Any embedded single-quotes are escaped with the
- * standard `'\''` trick.
- */
-function shellQuote(s) {
-    return "'" + s.replace(/'/g, "'\\''") + "'";
-}
 /* ------------------------------------------------------------------ */
 /*  Template rendering                                                */
 /* ------------------------------------------------------------------ */
@@ -28123,6 +28148,99 @@ async function remoteSetup(opts) {
     return result;
 }
 //# sourceMappingURL=remoteSetup.js.map
+;// CONCATENATED MODULE: ./lib/deploy/packageInstall.js
+
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                         */
+/* ------------------------------------------------------------------ */
+/** Default packages provisioned on every server. */
+const DEFAULT_PACKAGES = ["podman", "haproxy"];
+/**
+ * Valid Debian package name: lowercase alphanumeric start, followed by
+ * lowercase alphanumeric, dots, plus signs, or hyphens.  Minimum 2 chars.
+ * @see https://www.debian.org/doc/debian-policy/ch-controlfields.html#source
+ */
+const VALID_PKG_RE = /^[a-z0-9][a-z0-9.+\-]+$/;
+/* ------------------------------------------------------------------ */
+/*  Stage / error prefixes                                            */
+/* ------------------------------------------------------------------ */
+const STAGE_CLOUD_INIT = "PACKAGE_INSTALL_CLOUD_INIT";
+const STAGE_INSTALL = "PACKAGE_INSTALL_INSTALL";
+const STAGE_VERIFY = "PACKAGE_INSTALL_VERIFY";
+const STAGE_VALIDATE = "PACKAGE_INSTALL_VALIDATE";
+/* ------------------------------------------------------------------ */
+/*  Validation                                                        */
+/* ------------------------------------------------------------------ */
+/**
+ * Validate that `packages` is non-empty and every entry conforms to the
+ * Debian package naming policy.  Throws with a `PACKAGE_INSTALL_VALIDATE:`
+ * prefix on failure.
+ */
+function validatePackageNames(packages) {
+    if (packages.length === 0) {
+        throw new Error(`${STAGE_VALIDATE}: package list must not be empty`);
+    }
+    for (const name of packages) {
+        if (!VALID_PKG_RE.test(name)) {
+            throw new Error(`${STAGE_VALIDATE}: invalid package name: ${JSON.stringify(name)}`);
+        }
+    }
+}
+/* ------------------------------------------------------------------ */
+/*  Public API                                                        */
+/* ------------------------------------------------------------------ */
+/**
+ * Install required packages on the remote host.
+ *
+ * Stages:
+ *   1. Wait for cloud-init to finish (so apt locks are released).
+ *   2. `apt-get update && apt-get install` the requested packages.
+ *   3. Verify each package is installed via `dpkg -s`.
+ *
+ * All errors are prefixed with their stage label (`PACKAGE_INSTALL_*`)
+ * for easy identification in CI logs.
+ */
+async function installPackages(opts) {
+    const { host, user, privateKey, packages = DEFAULT_PACKAGES, ipv6Only = false, } = opts;
+    validatePackageNames(packages);
+    await withKeyFile(privateKey, async (keyPath) => {
+        // Stage 1: Wait for cloud-init readiness
+        core.info(`[${STAGE_CLOUD_INIT}] Waiting for cloud-init to complete…`);
+        try {
+            await sshExec(keyPath, user, host, "cloud-init status --wait", ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${STAGE_CLOUD_INIT}: ${msg}`);
+        }
+        core.info(`[${STAGE_CLOUD_INIT}] Cloud-init ready.`);
+        // Stage 2: Install packages
+        const pkgList = packages.map((p) => shellQuote(p)).join(" ");
+        core.info(`[${STAGE_INSTALL}] Installing packages: ${pkgList}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo apt-get update -qq && sudo apt-get install -y -qq ${pkgList}`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${STAGE_INSTALL}: ${msg}`);
+        }
+        core.info(`[${STAGE_INSTALL}] Packages installed successfully.`);
+        // Stage 3: Verify installed packages
+        core.info(`[${STAGE_VERIFY}] Verifying installed packages…`);
+        try {
+            for (const pkg of packages) {
+                await sshExec(keyPath, user, host, `dpkg -s ${shellQuote(pkg)}`, ipv6Only);
+            }
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${STAGE_VERIFY}: ${msg}`);
+        }
+        core.info(`[${STAGE_VERIFY}] All packages verified.`);
+    });
+}
+//# sourceMappingURL=packageInstall.js.map
 ;// CONCATENATED MODULE: ./lib/validate.js
 
 /** Allowlist patterns — each must match the entire value. */
@@ -28205,6 +28323,7 @@ function validateInputs(inputs) {
 }
 //# sourceMappingURL=validate.js.map
 ;// CONCATENATED MODULE: ./lib/index.js
+
 
 
 
@@ -28299,7 +28418,7 @@ async function run() {
     }
     let setupResult = { unitInstalled: false, serviceRestarted: false };
     try {
-        core.info("Step 1/3: Ensuring target directory on remote host…");
+        core.info("Step 1/4: Ensuring target directory on remote host…");
         await remoteSetup({
             host: server.ip,
             user: inputs.sshUser,
@@ -28307,7 +28426,14 @@ async function run() {
             targetDir: inputs.targetDir,
             ipv6Only: inputs.ipv6Only,
         });
-        core.info("Step 2/3: Syncing files via rsync…");
+        core.info("Step 2/4: Installing required packages…");
+        await installPackages({
+            host: server.ip,
+            user: inputs.sshUser,
+            privateKey: inputs.sshPrivateKey,
+            ipv6Only: inputs.ipv6Only,
+        });
+        core.info("Step 3/4: Syncing files via rsync…");
         await rsyncDeploy({
             host: server.ip,
             user: inputs.sshUser,
@@ -28317,7 +28443,7 @@ async function run() {
             ipv6Only: inputs.ipv6Only,
         });
         if (inputs.serviceName) {
-            core.info("Step 3/3: Installing and restarting systemd unit…");
+            core.info("Step 4/4: Installing and restarting systemd unit…");
             setupResult = await remoteSetup({
                 host: server.ip,
                 user: inputs.sshUser,
@@ -28329,7 +28455,7 @@ async function run() {
             core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
         }
         else {
-            core.info("Step 3/3: No service_name provided — skipping systemd unit.");
+            core.info("Step 4/4: No service_name provided — skipping systemd unit.");
         }
     }
     catch (deployErr) {

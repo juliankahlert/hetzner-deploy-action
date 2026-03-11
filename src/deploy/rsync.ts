@@ -1,8 +1,6 @@
 import * as core from "@actions/core";
 import * as exec from "@actions/exec";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { SSH_OPTIONS, writeKeyFile, cleanupKeyFile, formatSshHost } from "./ssh.js";
 
 /** Parameters accepted by {@link rsyncDeploy}. */
 export interface RsyncOptions {
@@ -21,6 +19,16 @@ export interface RsyncOptions {
   /** Custom SSH port (defaults to 22). */
   port?: number;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Input validation                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Allowed characters in an absolute target directory path. */
+const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/\-]+$/;
+
+/** Allowed characters in an SSH user name. */
+const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.\-]*$/;
 
 /**
  * Deploy a local directory to a remote server using rsync over SSH.
@@ -42,30 +50,31 @@ export async function rsyncDeploy(opts: RsyncOptions): Promise<void> {
     port = 22,
   } = opts;
 
+  // Validate inputs before writing any key material to disk.
+  if (!SAFE_USER_RE.test(user)) {
+    throw new Error(`rsync: invalid SSH user: ${JSON.stringify(user)}`);
+  }
+  if (!SAFE_PATH_RE.test(targetDir)) {
+    throw new Error(
+      `rsync: invalid target directory: ${JSON.stringify(targetDir)}`,
+    );
+  }
+
   // Normalise source path: ensure trailing slash so rsync copies *contents*.
   const normalisedSource = sourceDir.endsWith("/")
     ? sourceDir
     : `${sourceDir}/`;
 
   // Write private key to a temp file with strict permissions.
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "hda-ssh-"));
-  const keyFile = path.join(tmpDir, "deploy_key");
+  const keyFile = writeKeyFile(sshKey);
 
   try {
-    // Ensure key ends with a newline (some secrets trim it).
-    const keyContent = sshKey.endsWith("\n") ? sshKey : `${sshKey}\n`;
-    fs.writeFileSync(keyFile, keyContent, { mode: 0o600 });
     core.info("SSH private key written to temporary file.");
 
     // Build the SSH command used by rsync.
     const sshParts: string[] = [
       "ssh",
-      "-o",
-      "StrictHostKeyChecking=accept-new",
-      "-o",
-      "UserKnownHostsFile=/dev/null",
-      "-o",
-      "LogLevel=ERROR",
+      ...SSH_OPTIONS,
       "-i",
       keyFile,
       "-p",
@@ -81,13 +90,14 @@ export async function rsyncDeploy(opts: RsyncOptions): Promise<void> {
     // Format remote destination — bracket IPv6 addresses regardless of
     // ipv6Only flag (the server may be IPv6-only even when the flag is false,
     // e.g. reusing an existing server that has no IPv4).
-    const remoteHost = host.includes(":") ? `[${host}]` : host;
+    const remoteHost = formatSshHost(host);
     const destination = `${user}@${remoteHost}:${targetDir}`;
 
     // Assemble rsync arguments.
     const rsyncArgs: string[] = [
       "-avz",
       "--delete",
+      "--protect-args",
       "-e",
       sshCmd,
       normalisedSource,
@@ -129,8 +139,7 @@ export async function rsyncDeploy(opts: RsyncOptions): Promise<void> {
   } finally {
     // Clean up the temporary key file unconditionally.
     try {
-      fs.unlinkSync(keyFile);
-      fs.rmdirSync(tmpDir);
+      cleanupKeyFile(keyFile);
       core.info("Temporary SSH key file removed.");
     } catch {
       core.warning("Failed to remove temporary SSH key file.");

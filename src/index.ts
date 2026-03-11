@@ -4,6 +4,7 @@ import { ensureSshKey } from "./hetzner/sshKeys.js";
 import { findOrCreateServer } from "./hetzner/findOrCreateServer.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { remoteSetup } from "./deploy/remoteSetup.js";
+import { installPackages } from "./deploy/packageInstall.js";
 import { validateInputs, type ValidatableInputs } from "./validate.js";
 
 interface ActionInputs {
@@ -132,7 +133,7 @@ async function run(): Promise<void> {
   let setupResult = { unitInstalled: false, serviceRestarted: false };
 
   try {
-    core.info("Step 1/3: Ensuring target directory on remote host…");
+    core.info("Step 1/4: Ensuring target directory on remote host…");
     await remoteSetup({
       host: server.ip,
       user: inputs.sshUser,
@@ -141,7 +142,15 @@ async function run(): Promise<void> {
       ipv6Only: inputs.ipv6Only,
     });
 
-    core.info("Step 2/3: Syncing files via rsync…");
+    core.info("Step 2/4: Installing required packages…");
+    await installPackages({
+      host: server.ip,
+      user: inputs.sshUser,
+      privateKey: inputs.sshPrivateKey,
+      ipv6Only: inputs.ipv6Only,
+    });
+
+    core.info("Step 3/4: Syncing files via rsync…");
     await rsyncDeploy({
       host: server.ip,
       user: inputs.sshUser,
@@ -152,7 +161,7 @@ async function run(): Promise<void> {
     });
 
     if (inputs.serviceName) {
-      core.info("Step 3/3: Installing and restarting systemd unit…");
+      core.info("Step 4/4: Installing and restarting systemd unit…");
       setupResult = await remoteSetup({
         host: server.ip,
         user: inputs.sshUser,
@@ -163,7 +172,7 @@ async function run(): Promise<void> {
       });
       core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
     } else {
-      core.info("Step 3/3: No service_name provided — skipping systemd unit.");
+      core.info("Step 4/4: No service_name provided — skipping systemd unit.");
     }
   } catch (deployErr: unknown) {
     const msg =

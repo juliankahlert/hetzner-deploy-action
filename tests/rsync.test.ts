@@ -27,6 +27,7 @@ vi.mock("node:os", () => ({
 
 vi.mock("node:path", () => ({
   join: vi.fn((...segments: string[]) => segments.join("/")),
+  dirname: vi.fn((p: string) => p.substring(0, p.lastIndexOf("/"))),
 }));
 
 // ---------------------------------------------------------------------------
@@ -46,8 +47,8 @@ import { rsyncDeploy, type RsyncOptions } from "../src/deploy/rsync";
 // ---------------------------------------------------------------------------
 
 const FAKE_TMP = "/tmp";
-const FAKE_TMP_DIR = "/tmp/hda-ssh-XXXXXX";
-const FAKE_KEY_FILE = "/tmp/hda-ssh-XXXXXX/deploy_key";
+const FAKE_TMP_DIR = "/tmp/hda-key-XXXXXX";
+const FAKE_KEY_FILE = "/tmp/hda-key-XXXXXX/id";
 
 /** Builds an RsyncOptions object with sensible IPv4 defaults. */
 function makeOpts(overrides?: Partial<RsyncOptions>): RsyncOptions {
@@ -76,6 +77,9 @@ beforeEach(() => {
   vi.mocked(path.join).mockImplementation(
     (...segments: string[]) => segments.join("/"),
   );
+  vi.mocked(path.dirname).mockImplementation(
+    (p: string) => p.substring(0, p.lastIndexOf("/")),
+  );
   vi.mocked(exec.exec).mockResolvedValue(0);
 });
 
@@ -87,7 +91,7 @@ describe("rsyncDeploy — happy path IPv4", () => {
   it("writes SSH key to a temp file with mode 0600", async () => {
     await rsyncDeploy(makeOpts());
 
-    expect(fs.mkdtempSync).toHaveBeenCalledWith(`${FAKE_TMP}/hda-ssh-`);
+    expect(fs.mkdtempSync).toHaveBeenCalledWith(`${FAKE_TMP}/hda-key-`);
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       FAKE_KEY_FILE,
       expect.any(String),
@@ -102,7 +106,7 @@ describe("rsyncDeploy — happy path IPv4", () => {
     const [cmd, args, opts] = vi.mocked(exec.exec).mock.calls[0];
     expect(cmd).toBe("rsync");
     expect(args).toEqual(
-      expect.arrayContaining(["-avz", "--delete", "-e"]),
+      expect.arrayContaining(["-avz", "--delete", "--protect-args", "-e"]),
     );
 
     // SSH command includes key file and host-key settings
@@ -256,5 +260,36 @@ describe("rsyncDeploy — cleanup on failure", () => {
     expect(core.warning).toHaveBeenCalledWith(
       "Failed to remove temporary SSH key file.",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Input validation
+// ---------------------------------------------------------------------------
+
+describe("rsyncDeploy — input validation", () => {
+  it("rejects a relative targetDir", async () => {
+    await expect(
+      rsyncDeploy(makeOpts({ targetDir: "relative/path" })),
+    ).rejects.toThrow(/invalid target directory/);
+  });
+
+  it("rejects targetDir with shell metacharacters", async () => {
+    await expect(
+      rsyncDeploy(makeOpts({ targetDir: "/opt/app;rm -rf /" })),
+    ).rejects.toThrow(/invalid target directory/);
+  });
+
+  it("rejects user with shell metacharacters", async () => {
+    await expect(
+      rsyncDeploy(makeOpts({ user: "user;whoami" })),
+    ).rejects.toThrow(/invalid SSH user/);
+  });
+
+  it("does not create a key file when validation fails", async () => {
+    await rsyncDeploy(makeOpts({ targetDir: "bad" })).catch(() => {});
+
+    expect(fs.mkdtempSync).not.toHaveBeenCalled();
+    expect(fs.writeFileSync).not.toHaveBeenCalled();
   });
 });
