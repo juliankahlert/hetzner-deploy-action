@@ -28158,7 +28158,7 @@ const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.\-]*$/;
  *   first connection auto-accepts the host key without prompting.
  */
 async function rsyncDeploy(opts) {
-    const { host, user, sourceDir, targetDir, sshKey, ipv6Only = false, port = 22, } = opts;
+    const { host, user, sourceDir, targetDir, sshKey, excludePatterns = [], ipv6Only = false, port = 22, } = opts;
     // Validate inputs before writing any key material to disk.
     if (!SAFE_USER_RE.test(user)) {
         throw new Error(`rsync: invalid SSH user: ${JSON.stringify(user)}`);
@@ -28197,6 +28197,7 @@ async function rsyncDeploy(opts) {
             "-avz",
             "--delete",
             "--protect-args",
+            ...excludePatterns.flatMap((pattern) => ["--exclude", pattern]),
             "-e",
             sshCmd,
             normalisedSource,
@@ -28367,7 +28368,83 @@ async function deployPodman(opts) {
     return result;
 }
 //# sourceMappingURL=podman.js.map
+;// CONCATENATED MODULE: ./lib/deploy/haproxy.js
+
+
+
+/* ------------------------------------------------------------------ */
+/*  Error-prefix constants                                            */
+/* ------------------------------------------------------------------ */
+const haproxy_ERR_UPLOAD = "HAPROXY_UPLOAD";
+const ERR_VALIDATE = "HAPROXY_VALIDATE";
+const ERR_RELOAD = "HAPROXY_RELOAD";
+/* ------------------------------------------------------------------ */
+/*  Public API                                                        */
+/* ------------------------------------------------------------------ */
+/**
+ * Deploy an HAProxy configuration to a remote host.
+ *
+ * Steps:
+ *   1. Read the local HAProxy configuration file.
+ *   2. Upload it to `/etc/haproxy/haproxy.cfg` on the remote host.
+ *   3. Validate the uploaded configuration with `haproxy -c`.
+ *   4. Reload the HAProxy service.
+ *
+ * All remote-stage errors are prefixed with their stage label for easy
+ * identification in CI logs.
+ */
+async function deployHaproxy(opts) {
+    const { host, user, privateKey, cfgPath, ipv6Only = false } = opts;
+    const result = {
+        configUploaded: false,
+        serviceReloaded: false,
+    };
+    const remotePath = "/etc/haproxy/haproxy.cfg";
+    lib_core.info(`[${haproxy_ERR_UPLOAD}] Reading HAProxy configuration from ${cfgPath}…`);
+    let configContent;
+    try {
+        configContent = external_node_fs_namespaceObject.readFileSync(cfgPath, "utf-8");
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${haproxy_ERR_UPLOAD}: failed to read local config: ${msg}`);
+    }
+    await withKeyFile(privateKey, async (keyPath) => {
+        lib_core.info(`[${haproxy_ERR_UPLOAD}] Uploading HAProxy configuration to ${remotePath}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${configContent}\nHAPROXY_CFG_EOF`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${haproxy_ERR_UPLOAD}: ${msg}`);
+        }
+        result.configUploaded = true;
+        lib_core.info(`[${haproxy_ERR_UPLOAD}] HAProxy configuration written to ${remotePath}.`);
+        lib_core.info(`[${ERR_VALIDATE}] Validating HAProxy configuration…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo haproxy -c -f ${shellQuote(remotePath)}`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_VALIDATE}: ${msg}`);
+        }
+        lib_core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
+        lib_core.info(`[${ERR_RELOAD}] Reloading haproxy service…`);
+        try {
+            await sshExec(keyPath, user, host, "sudo systemctl reload haproxy", ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_RELOAD}: ${msg}`);
+        }
+        result.serviceReloaded = true;
+        lib_core.info(`[${ERR_RELOAD}] haproxy service reloaded successfully.`);
+    });
+    return result;
+}
+//# sourceMappingURL=haproxy.js.map
 ;// CONCATENATED MODULE: ./lib/pipeline.js
+
 
 
 
@@ -28474,6 +28551,7 @@ async function deployPipeline(inputs) {
     const total = stages.length;
     let setupResult = { unitInstalled: false, serviceRestarted: false };
     let podmanResult = { quadletUploaded: false, serviceRestarted: false };
+    let haproxyResult = { configUploaded: false, serviceReloaded: false };
     for (let i = 0; i < stages.length; i++) {
         const stage = stages[i];
         const stepLabel = `Step ${i + 1}/${total}`;
@@ -28534,8 +28612,17 @@ async function deployPipeline(inputs) {
                     lib_core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
                     break;
                 case STAGES.haproxy:
-                    // Future: HAProxy configuration
-                    lib_core.info(`[${stage}] HAProxy configuration not yet implemented.`);
+                    if (!inputs.haproxyCfg) {
+                        throw new Error("haproxy_cfg is required for haproxy deployment");
+                    }
+                    haproxyResult = await deployHaproxy({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        privateKey: inputs.sshPrivateKey,
+                        cfgPath: inputs.haproxyCfg,
+                        ipv6Only: inputs.ipv6Only,
+                    });
+                    lib_core.info("HAProxy configuration deployed and service reloaded.");
                     break;
                 case STAGES.firewall:
                     // Future: Firewall rules
@@ -28562,6 +28649,10 @@ async function deployPipeline(inputs) {
     if (stages.includes(STAGES.podman)) {
         lib_core.info(`  podman quadlet:    ${podmanResult.quadletUploaded ? "uploaded" : "skipped"}`);
         lib_core.info(`  podman restarted:  ${podmanResult.serviceRestarted ? "yes" : "no"}`);
+    }
+    if (stages.includes(STAGES.haproxy)) {
+        lib_core.info(`  haproxy config:    ${haproxyResult.configUploaded ? "uploaded" : "skipped"}`);
+        lib_core.info(`  haproxy reloaded:  ${haproxyResult.serviceReloaded ? "yes" : "no"}`);
     }
     lib_core.info(`  systemd unit:      ${setupResult.unitInstalled ? "installed" : "skipped"}`);
     lib_core.info(`  service restarted: ${setupResult.serviceRestarted ? "yes" : "no"}`);

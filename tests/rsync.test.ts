@@ -237,7 +237,48 @@ describe("rsyncDeploy — trailing slash normalisation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Cleanup in finally block on failure
+// 6. Exclude pattern support
+// ---------------------------------------------------------------------------
+
+describe("rsyncDeploy — exclude patterns", () => {
+  it("adds each exclude pattern before the ssh command and paths", async () => {
+    await rsyncDeploy(
+      makeOpts({ excludePatterns: ["node_modules", "*.log"] }),
+    );
+
+    const args = vi.mocked(exec.exec).mock.calls[0][1]!;
+    expect(args).toEqual([
+      "-avz",
+      "--delete",
+      "--protect-args",
+      "--exclude",
+      "node_modules",
+      "--exclude",
+      "*.log",
+      "-e",
+      expect.any(String),
+      "./dist/",
+      "deploy@1.2.3.4:/opt/app",
+    ]);
+  });
+
+  it("omits exclude flags when excludePatterns is an empty array", async () => {
+    await rsyncDeploy(makeOpts({ excludePatterns: [] }));
+
+    const args = vi.mocked(exec.exec).mock.calls[0][1]!;
+    expect(args).not.toContain("--exclude");
+  });
+
+  it("omits exclude flags when excludePatterns is not provided", async () => {
+    await rsyncDeploy(makeOpts());
+
+    const args = vi.mocked(exec.exec).mock.calls[0][1]!;
+    expect(args).not.toContain("--exclude");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Cleanup in finally block on failure
 // ---------------------------------------------------------------------------
 
 describe("rsyncDeploy — cleanup on failure", () => {
@@ -264,7 +305,7 @@ describe("rsyncDeploy — cleanup on failure", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. Input validation
+// 8. Input validation
 // ---------------------------------------------------------------------------
 
 describe("rsyncDeploy — input validation", () => {

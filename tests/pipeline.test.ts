@@ -9,6 +9,14 @@ vi.mock("@actions/core", async () => {
   return createCoreMock();
 });
 
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    existsSync: vi.fn(),
+  };
+});
+
 // Hetzner modules — mock at module boundary
 vi.mock("../src/hetzner/client.js", () => ({
   createClient: vi.fn(),
@@ -40,11 +48,16 @@ vi.mock("../src/deploy/podman.js", () => ({
   deployPodman: vi.fn(),
 }));
 
+vi.mock("../src/deploy/haproxy.js", () => ({
+  deployHaproxy: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (receive mocked implementations)
 // ---------------------------------------------------------------------------
 
 import * as core from "@actions/core";
+import { existsSync } from "node:fs";
 import { createClient } from "../src/hetzner/client.js";
 import { ensureSshKey } from "../src/hetzner/sshKeys.js";
 import { findOrCreateServer } from "../src/hetzner/findOrCreateServer.js";
@@ -52,6 +65,7 @@ import { ensureTargetDir, installSystemdUnit } from "../src/deploy/remoteSetup.j
 import { installPackages } from "../src/deploy/packageInstall.js";
 import { rsyncDeploy } from "../src/deploy/rsync.js";
 import { deployPodman } from "../src/deploy/podman.js";
+import { deployHaproxy } from "../src/deploy/haproxy.js";
 import {
   deployPipeline,
   activeStages,
@@ -103,7 +117,7 @@ let callOrder: string[];
 
 function trackCallOrder(): void {
   vi.mocked(core.info).mockImplementation((message?: string) => {
-    const match = /^Step \d+\/\d+: \[(haproxy|firewall)\]$/.exec(String(message));
+    const match = /^Step \d+\/\d+: \[(firewall)\]$/.exec(String(message));
     if (match) {
       callOrder.push(match[1]!);
     }
@@ -121,6 +135,10 @@ function trackCallOrder(): void {
     callOrder.push(STAGES.podman);
     return { quadletUploaded: true, serviceRestarted: true };
   });
+  vi.mocked(deployHaproxy).mockImplementation(async () => {
+    callOrder.push(STAGES.haproxy);
+    return { configUploaded: true, serviceReloaded: true };
+  });
   vi.mocked(installSystemdUnit).mockImplementation(async () => {
     callOrder.push(STAGES.systemd);
     return { unitInstalled: true, serviceRestarted: true };
@@ -136,6 +154,7 @@ beforeEach(() => {
   callOrder = [];
 
   // Default Hetzner mocks — provisioning always succeeds
+  vi.mocked(existsSync).mockReturnValue(true);
   vi.mocked(createClient).mockReturnValue({} as ReturnType<typeof createClient>);
   vi.mocked(ensureSshKey).mockResolvedValue(FAKE_SSH_KEY);
   vi.mocked(findOrCreateServer).mockResolvedValue(FAKE_SERVER);
@@ -147,6 +166,10 @@ beforeEach(() => {
   vi.mocked(deployPodman).mockResolvedValue({
     quadletUploaded: true,
     serviceRestarted: true,
+  });
+  vi.mocked(deployHaproxy).mockResolvedValue({
+    configUploaded: true,
+    serviceReloaded: true,
   });
   vi.mocked(installSystemdUnit).mockResolvedValue({
     unitInstalled: true,
@@ -394,17 +417,13 @@ describe("deployPipeline — conditional skipping", () => {
   it("skips haproxy stage when haproxyCfg is absent", async () => {
     await deployPipeline(BASE_INPUTS);
 
-    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
-    const haproxyStepCalls = infoCalls.filter((msg) => /\[haproxy\]/.test(msg));
-    expect(haproxyStepCalls).toHaveLength(0);
+    expect(deployHaproxy).not.toHaveBeenCalled();
   });
 
   it("executes haproxy stage when haproxyCfg is present", async () => {
     await deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
 
-    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
-    const haproxyMentions = infoCalls.filter((msg) => /\[haproxy\]/.test(msg));
-    expect(haproxyMentions.length).toBeGreaterThan(0);
+    expect(deployHaproxy).toHaveBeenCalledOnce();
   });
 
   it("skips firewall stage when firewallEnabled is falsy", async () => {
@@ -469,6 +488,14 @@ describe("deployPipeline — error propagation", () => {
     await expect(
       deployPipeline(withInputs({ containerImage: "docker.io/myapp:latest" })),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_podman: quadlet upload failed$/);
+  });
+
+  it("wraps haproxy failure with DEPLOY_PIPELINE_haproxy prefix", async () => {
+    vi.mocked(deployHaproxy).mockRejectedValueOnce(new Error("reload failed"));
+
+    await expect(
+      deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" })),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: reload failed$/);
   });
 
   it("wraps non-Error thrown values in the DEPLOY_PIPELINE_ prefix", async () => {
@@ -608,6 +635,18 @@ describe("deployPipeline — stage arguments", () => {
       image: "docker.io/myapp:latest",
       port: "8080:80",
       serviceName: "myapp",
+      ipv6Only: false,
+    });
+  });
+
+  it("passes correct options to deployHaproxy when haproxyCfg is set", async () => {
+    await deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
+
+    expect(deployHaproxy).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      cfgPath: "/etc/haproxy/haproxy.cfg",
       ipv6Only: false,
     });
   });

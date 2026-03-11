@@ -6,6 +6,7 @@ import { ensureTargetDir, installSystemdUnit } from "./deploy/remoteSetup.js";
 import { installPackages } from "./deploy/packageInstall.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { deployPodman } from "./deploy/podman.js";
+import { deployHaproxy } from "./deploy/haproxy.js";
 
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
@@ -157,6 +158,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
   const total = stages.length;
   let setupResult = { unitInstalled: false, serviceRestarted: false };
   let podmanResult = { quadletUploaded: false, serviceRestarted: false };
+  let haproxyResult = { configUploaded: false, serviceReloaded: false };
 
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
@@ -227,8 +229,17 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           break;
 
         case STAGES.haproxy:
-          // Future: HAProxy configuration
-          core.info(`[${stage}] HAProxy configuration not yet implemented.`);
+          if (!inputs.haproxyCfg) {
+            throw new Error("haproxy_cfg is required for haproxy deployment");
+          }
+          haproxyResult = await deployHaproxy({
+            host: server.ip,
+            user: inputs.sshUser,
+            privateKey: inputs.sshPrivateKey,
+            cfgPath: inputs.haproxyCfg,
+            ipv6Only: inputs.ipv6Only,
+          });
+          core.info("HAProxy configuration deployed and service reloaded.");
           break;
 
         case STAGES.firewall:
@@ -262,6 +273,14 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
     );
     core.info(
       `  podman restarted:  ${podmanResult.serviceRestarted ? "yes" : "no"}`,
+    );
+  }
+  if (stages.includes(STAGES.haproxy)) {
+    core.info(
+      `  haproxy config:    ${haproxyResult.configUploaded ? "uploaded" : "skipped"}`,
+    );
+    core.info(
+      `  haproxy reloaded:  ${haproxyResult.serviceReloaded ? "yes" : "no"}`,
     );
   }
   core.info(

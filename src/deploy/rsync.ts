@@ -14,6 +14,8 @@ export interface RsyncOptions {
   targetDir: string;
   /** SSH private key content (PEM). Written to a temp file for the transfer. */
   sshKey: string;
+  /** Optional rsync exclude patterns passed as repeated `--exclude` flags. */
+  excludePatterns?: string[];
   /** When true the host is an IPv6 address — forces ssh/rsync to use `-6`. */
   ipv6Only?: boolean;
   /** Custom SSH port (defaults to 22). */
@@ -46,6 +48,7 @@ export async function rsyncDeploy(opts: RsyncOptions): Promise<void> {
     sourceDir,
     targetDir,
     sshKey,
+    excludePatterns = [],
     ipv6Only = false,
     port = 22,
   } = opts;
@@ -98,6 +101,7 @@ export async function rsyncDeploy(opts: RsyncOptions): Promise<void> {
       "-avz",
       "--delete",
       "--protect-args",
+      ...excludePatterns.flatMap((pattern) => ["--exclude", pattern]),
       "-e",
       sshCmd,
       normalisedSource,
