@@ -52,6 +52,10 @@ vi.mock("../src/deploy/haproxy.js", () => ({
   deployHaproxy: vi.fn(),
 }));
 
+vi.mock("../src/deploy/firewall.js", () => ({
+  configureFirewall: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (receive mocked implementations)
 // ---------------------------------------------------------------------------
@@ -66,6 +70,7 @@ import { installPackages } from "../src/deploy/packageInstall.js";
 import { rsyncDeploy } from "../src/deploy/rsync.js";
 import { deployPodman } from "../src/deploy/podman.js";
 import { deployHaproxy } from "../src/deploy/haproxy.js";
+import { configureFirewall } from "../src/deploy/firewall.js";
 import {
   deployPipeline,
   activeStages,
@@ -116,12 +121,6 @@ function withInputs(overrides: Partial<ActionInputs>): ActionInputs {
 let callOrder: string[];
 
 function trackCallOrder(): void {
-  vi.mocked(core.info).mockImplementation((message?: string) => {
-    const match = /^Step \d+\/\d+: \[(firewall)\]$/.exec(String(message));
-    if (match) {
-      callOrder.push(match[1]!);
-    }
-  });
   vi.mocked(installPackages).mockImplementation(async () => {
     callOrder.push(STAGES.installPackages);
   });
@@ -138,6 +137,10 @@ function trackCallOrder(): void {
   vi.mocked(deployHaproxy).mockImplementation(async () => {
     callOrder.push(STAGES.haproxy);
     return { configUploaded: true, serviceReloaded: true };
+  });
+  vi.mocked(configureFirewall).mockImplementation(async () => {
+    callOrder.push(STAGES.firewall);
+    return { firewallEnabled: true, rulesApplied: 4 };
   });
   vi.mocked(installSystemdUnit).mockImplementation(async () => {
     callOrder.push(STAGES.systemd);
@@ -170,6 +173,10 @@ beforeEach(() => {
   vi.mocked(deployHaproxy).mockResolvedValue({
     configUploaded: true,
     serviceReloaded: true,
+  });
+  vi.mocked(configureFirewall).mockResolvedValue({
+    firewallEnabled: true,
+    rulesApplied: 4,
   });
   vi.mocked(installSystemdUnit).mockResolvedValue({
     unitInstalled: true,
@@ -429,17 +436,13 @@ describe("deployPipeline — conditional skipping", () => {
   it("skips firewall stage when firewallEnabled is falsy", async () => {
     await deployPipeline(BASE_INPUTS);
 
-    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
-    const firewallStepCalls = infoCalls.filter((msg) => /\[firewall\]/.test(msg));
-    expect(firewallStepCalls).toHaveLength(0);
+    expect(configureFirewall).not.toHaveBeenCalled();
   });
 
   it("executes firewall stage when firewallEnabled is true", async () => {
     await deployPipeline(withInputs({ firewallEnabled: true }));
 
-    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
-    const firewallMentions = infoCalls.filter((msg) => /\[firewall\]/.test(msg));
-    expect(firewallMentions.length).toBeGreaterThan(0);
+    expect(configureFirewall).toHaveBeenCalledOnce();
   });
 });
 
@@ -496,6 +499,14 @@ describe("deployPipeline — error propagation", () => {
     await expect(
       deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" })),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: reload failed$/);
+  });
+
+  it("wraps firewall failure with DEPLOY_PIPELINE_firewall prefix", async () => {
+    vi.mocked(configureFirewall).mockRejectedValueOnce(new Error("FIREWALL_APPLY failed"));
+
+    await expect(
+      deployPipeline(withInputs({ firewallEnabled: true })),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_firewall: FIREWALL_APPLY failed$/);
   });
 
   it("wraps non-Error thrown values in the DEPLOY_PIPELINE_ prefix", async () => {
@@ -647,6 +658,17 @@ describe("deployPipeline — stage arguments", () => {
       user: "deploy",
       privateKey: "PRIVATE_KEY",
       cfgPath: "/etc/haproxy/haproxy.cfg",
+      ipv6Only: false,
+    });
+  });
+
+  it("passes correct options to configureFirewall when firewall is enabled", async () => {
+    await deployPipeline(withInputs({ firewallEnabled: true }));
+
+    expect(configureFirewall).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
       ipv6Only: false,
     });
   });

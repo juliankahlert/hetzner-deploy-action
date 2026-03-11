@@ -7,6 +7,7 @@ import { installPackages } from "./deploy/packageInstall.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { deployPodman } from "./deploy/podman.js";
 import { deployHaproxy } from "./deploy/haproxy.js";
+import { configureFirewall } from "./deploy/firewall.js";
 
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
@@ -159,6 +160,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
   let setupResult = { unitInstalled: false, serviceRestarted: false };
   let podmanResult = { quadletUploaded: false, serviceRestarted: false };
   let haproxyResult = { configUploaded: false, serviceReloaded: false };
+  let firewallResult = { firewallEnabled: false, rulesApplied: 0 };
 
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
@@ -243,8 +245,13 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           break;
 
         case STAGES.firewall:
-          // Future: Firewall rules
-          core.info(`[${stage}] Firewall configuration not yet implemented.`);
+          firewallResult = await configureFirewall({
+            host: server.ip,
+            user: inputs.sshUser,
+            privateKey: inputs.sshPrivateKey,
+            ipv6Only: inputs.ipv6Only,
+          });
+          core.info("Firewall configured and enabled.");
           break;
       }
     } catch (err: unknown) {
@@ -282,6 +289,12 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
     core.info(
       `  haproxy reloaded:  ${haproxyResult.serviceReloaded ? "yes" : "no"}`,
     );
+  }
+  if (stages.includes(STAGES.firewall)) {
+    core.info(
+      `  firewall enabled:  ${firewallResult.firewallEnabled ? "yes" : "no"}`,
+    );
+    core.info(`  firewall rules:   ${firewallResult.rulesApplied}`);
   }
   core.info(
     `  systemd unit:      ${setupResult.unitInstalled ? "installed" : "skipped"}`,

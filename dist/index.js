@@ -28443,7 +28443,131 @@ async function deployHaproxy(opts) {
     return result;
 }
 //# sourceMappingURL=haproxy.js.map
+;// CONCATENATED MODULE: ./lib/deploy/firewall.js
+
+
+/* ------------------------------------------------------------------ */
+/*  Error-prefix constants                                            */
+/* ------------------------------------------------------------------ */
+const FIREWALL_ERRORS = {
+    VALIDATE: "FIREWALL_VALIDATE",
+    INSTALL: "FIREWALL_INSTALL",
+    DEFAULTS: "FIREWALL_DEFAULTS",
+    SSH_RULE: "FIREWALL_SSH_RULE",
+    WEB_RULES: "FIREWALL_WEB_RULES",
+    EXTRA_RULES: "FIREWALL_EXTRA_RULES",
+    ENABLE: "FIREWALL_ENABLE",
+};
+/* ------------------------------------------------------------------ */
+/*  Validation helpers                                                */
+/* ------------------------------------------------------------------ */
+const PORT_SPEC_RE = /^(\d{1,5})(?:\/(tcp|udp))?$/i;
+function normalizeExtraPort(port) {
+    const raw = String(port).trim();
+    const match = PORT_SPEC_RE.exec(raw);
+    if (!match) {
+        throw new Error(`${FIREWALL_ERRORS.VALIDATE}: invalid extra port: ${JSON.stringify(port)}`);
+    }
+    const portNumber = Number(match[1]);
+    if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+        throw new Error(`${FIREWALL_ERRORS.VALIDATE}: port out of range: ${JSON.stringify(port)}`);
+    }
+    const protocol = (match[2] ?? "tcp").toLowerCase();
+    return `${portNumber}/${protocol}`;
+}
+async function withLogGroup(title, fn) {
+    lib_core.startGroup(title);
+    try {
+        return await fn();
+    }
+    finally {
+        lib_core.endGroup();
+    }
+}
+async function runFirewallCommand(keyPath, user, host, command, errorPrefix, ipv6Only) {
+    try {
+        return await sshExec(keyPath, user, host, command, ipv6Only);
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${errorPrefix}: ${msg}`);
+    }
+}
+/* ------------------------------------------------------------------ */
+/*  Public API                                                        */
+/* ------------------------------------------------------------------ */
+/**
+ * Install and configure UFW on a remote host.
+ *
+ * Stages:
+ *   1. Validate/install `ufw` when missing.
+ *   2. Set default policies.
+ *   3. Allow SSH, required web ports, and optional extra ports.
+ *   4. Enable UFW non-interactively.
+ *
+ * All remote-stage failures are wrapped with `FIREWALL_*` prefixes for
+ * easier CI log inspection.
+ */
+async function configureFirewall(options) {
+    const { host, user, privateKey, ipv6Only = false, extraPorts = [], } = options;
+    const normalizedExtraPorts = extraPorts.map((port) => normalizeExtraPort(port));
+    const result = {
+        firewallEnabled: false,
+        rulesApplied: 0,
+    };
+    await withLogGroup("Configure firewall", async () => {
+        lib_core.info(`Preparing UFW on ${host}${ipv6Only ? " (IPv6-only mode)" : ""}…`);
+        await withKeyFile(privateKey, async (keyPath) => {
+            await withLogGroup("Validate/install UFW", async () => {
+                lib_core.info(`[${FIREWALL_ERRORS.INSTALL}] Ensuring UFW is installed…`);
+                await runFirewallCommand(keyPath, user, host, "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1", FIREWALL_ERRORS.INSTALL, ipv6Only);
+                lib_core.info(`[${FIREWALL_ERRORS.INSTALL}] UFW is available.`);
+            });
+            await withLogGroup("Set firewall defaults", async () => {
+                lib_core.info(`[${FIREWALL_ERRORS.DEFAULTS}] Setting deny-incoming / allow-outgoing defaults…`);
+                await runFirewallCommand(keyPath, user, host, "sudo ufw default deny incoming && sudo ufw default allow outgoing", FIREWALL_ERRORS.DEFAULTS, ipv6Only);
+                lib_core.info(`[${FIREWALL_ERRORS.DEFAULTS}] Default policies configured.`);
+            });
+            await withLogGroup("Allow SSH access", async () => {
+                lib_core.info(`[${FIREWALL_ERRORS.SSH_RULE}] Allowing SSH on 22/tcp…`);
+                await runFirewallCommand(keyPath, user, host, "sudo ufw allow 22/tcp", FIREWALL_ERRORS.SSH_RULE, ipv6Only);
+                result.rulesApplied += 1;
+                lib_core.info(`[${FIREWALL_ERRORS.SSH_RULE}] SSH rule configured.`);
+            });
+            await withLogGroup("Allow web ports", async () => {
+                lib_core.info(`[${FIREWALL_ERRORS.WEB_RULES}] Allowing 80/tcp…`);
+                await runFirewallCommand(keyPath, user, host, "sudo ufw allow 80/tcp", FIREWALL_ERRORS.WEB_RULES, ipv6Only);
+                result.rulesApplied += 1;
+                lib_core.info(`[${FIREWALL_ERRORS.WEB_RULES}] Allowing 443/tcp…`);
+                await runFirewallCommand(keyPath, user, host, "sudo ufw allow 443/tcp", FIREWALL_ERRORS.WEB_RULES, ipv6Only);
+                result.rulesApplied += 1;
+                lib_core.info(`[${FIREWALL_ERRORS.WEB_RULES}] Required web rules configured.`);
+            });
+            await withLogGroup("Allow extra ports", async () => {
+                if (normalizedExtraPorts.length === 0) {
+                    lib_core.info(`[${FIREWALL_ERRORS.EXTRA_RULES}] No extra ports requested.`);
+                    return;
+                }
+                for (const port of normalizedExtraPorts) {
+                    lib_core.info(`[${FIREWALL_ERRORS.EXTRA_RULES}] Allowing ${port}…`);
+                    await runFirewallCommand(keyPath, user, host, `sudo ufw allow ${shellQuote(port)}`, FIREWALL_ERRORS.EXTRA_RULES, ipv6Only);
+                    result.rulesApplied += 1;
+                }
+                lib_core.info(`[${FIREWALL_ERRORS.EXTRA_RULES}] Extra port rules configured.`);
+            });
+            await withLogGroup("Enable firewall", async () => {
+                lib_core.info(`[${FIREWALL_ERRORS.ENABLE}] Enabling UFW…`);
+                await runFirewallCommand(keyPath, user, host, "sudo ufw --force enable", FIREWALL_ERRORS.ENABLE, ipv6Only);
+                result.firewallEnabled = true;
+                lib_core.info(`[${FIREWALL_ERRORS.ENABLE}] UFW enabled successfully.`);
+            });
+        });
+    });
+    return result;
+}
+//# sourceMappingURL=firewall.js.map
 ;// CONCATENATED MODULE: ./lib/pipeline.js
+
 
 
 
@@ -28552,6 +28676,7 @@ async function deployPipeline(inputs) {
     let setupResult = { unitInstalled: false, serviceRestarted: false };
     let podmanResult = { quadletUploaded: false, serviceRestarted: false };
     let haproxyResult = { configUploaded: false, serviceReloaded: false };
+    let firewallResult = { firewallEnabled: false, rulesApplied: 0 };
     for (let i = 0; i < stages.length; i++) {
         const stage = stages[i];
         const stepLabel = `Step ${i + 1}/${total}`;
@@ -28625,8 +28750,13 @@ async function deployPipeline(inputs) {
                     lib_core.info("HAProxy configuration deployed and service reloaded.");
                     break;
                 case STAGES.firewall:
-                    // Future: Firewall rules
-                    lib_core.info(`[${stage}] Firewall configuration not yet implemented.`);
+                    firewallResult = await configureFirewall({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        privateKey: inputs.sshPrivateKey,
+                        ipv6Only: inputs.ipv6Only,
+                    });
+                    lib_core.info("Firewall configured and enabled.");
                     break;
             }
         }
@@ -28653,6 +28783,10 @@ async function deployPipeline(inputs) {
     if (stages.includes(STAGES.haproxy)) {
         lib_core.info(`  haproxy config:    ${haproxyResult.configUploaded ? "uploaded" : "skipped"}`);
         lib_core.info(`  haproxy reloaded:  ${haproxyResult.serviceReloaded ? "yes" : "no"}`);
+    }
+    if (stages.includes(STAGES.firewall)) {
+        lib_core.info(`  firewall enabled:  ${firewallResult.firewallEnabled ? "yes" : "no"}`);
+        lib_core.info(`  firewall rules:   ${firewallResult.rulesApplied}`);
     }
     lib_core.info(`  systemd unit:      ${setupResult.unitInstalled ? "installed" : "skipped"}`);
     lib_core.info(`  service restarted: ${setupResult.serviceRestarted ? "yes" : "no"}`);

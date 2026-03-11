@@ -70,7 +70,7 @@ inputs:
   firewall_enabled:
     description: 'If true, enable the firewall stage'
     required: false
-    default: 'false'
+    default: 'true'
 outputs:
   server_ip:
     description: 'Public IP address of the server (IPv4 by default; IPv6 when ipv6_only is true)'
