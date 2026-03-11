@@ -28,7 +28,7 @@ vi.mock("../src/deploy/ssh.js", () => ({
 import * as fs from "node:fs";
 import * as ssh from "../src/deploy/ssh.js";
 
-import { deployHaproxy } from "../src/deploy/haproxy";
+import { deployHaproxy, deployHaproxyFragment } from "../src/deploy/haproxy";
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -36,13 +36,24 @@ import { deployHaproxy } from "../src/deploy/haproxy";
 
 const FAKE_KEY_PATH = "/tmp/hda-key-XXXXXX/id";
 const CFG_PATH = "/workspace/haproxy.cfg";
+const FRAGMENT_PATH = "/workspace/fragments/app.cfg";
 const REMOTE_CFG_PATH = "/etc/haproxy/haproxy.cfg";
+const FRAGMENT_NAME = "app";
+const REMOTE_FRAGMENT_PATH = `/etc/haproxy/conf.d/${FRAGMENT_NAME}.cfg`;
 
 const BASE_OPTS = {
   host: "1.2.3.4",
   user: "root",
   privateKey: "TEST_PRIVATE_KEY",
   cfgPath: CFG_PATH,
+} as const;
+
+const BASE_FRAGMENT_OPTS = {
+  host: "1.2.3.4",
+  user: "root",
+  privateKey: "TEST_PRIVATE_KEY",
+  fragmentPath: FRAGMENT_PATH,
+  fragmentName: FRAGMENT_NAME,
 } as const;
 
 const CONFIG_CONTENT = [
@@ -163,5 +174,48 @@ describe("deployHaproxy", () => {
 
     expect(ssh.withKeyFile).not.toHaveBeenCalled();
     expect(ssh.sshExec).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// deployHaproxyFragment
+// ===========================================================================
+
+describe("deployHaproxyFragment", () => {
+  it("reads the fragment, uploads it, validates the full config, and reloads haproxy", async () => {
+    const result = await deployHaproxyFragment(BASE_FRAGMENT_OPTS);
+
+    expect(result).toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    expect(fs.readFileSync).toHaveBeenCalledWith(FRAGMENT_PATH, "utf-8");
+    expect(ssh.withKeyFile).toHaveBeenCalledWith(
+      "TEST_PRIVATE_KEY",
+      expect.any(Function),
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
+    expect(sshRemoteCmd(0)).toContain(
+      `sudo tee '${REMOTE_FRAGMENT_PATH}' > /dev/null`,
+    );
+    expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
+    expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
+    expect(sshRemoteCmd(1)).toBe(
+      `sudo haproxy -c -f '${REMOTE_CFG_PATH}'`,
+    );
+    expect(sshRemoteCmd(2)).toBe("sudo systemctl reload haproxy");
+  });
+
+  it("wraps fragment upload failures with clear fragment context", async () => {
+    vi.mocked(ssh.sshExec).mockRejectedValueOnce(new Error("tee failed"));
+
+    await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).rejects.toThrow(
+      /HAPROXY_UPLOAD: failed to upload fragment "app": tee failed/,
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(1);
+    expect(sshRemoteCmd(0)).toContain(`'${REMOTE_FRAGMENT_PATH}'`);
   });
 });

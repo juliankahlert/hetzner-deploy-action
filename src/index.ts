@@ -17,7 +17,10 @@ function parseInputs(): ActionInputs {
     containerImage: core.getInput("container_image"),
     containerPort: core.getInput("container_port"),
     haproxyCfg: core.getInput("haproxy_cfg"),
+    haproxyFragment: core.getInput("haproxy_fragment"),
+    haproxyFragmentName: core.getInput("haproxy_fragment_name"),
     firewallEnabled: core.getInput("firewall_enabled"),
+    firewallExtraPorts: core.getInput("firewall_extra_ports"),
   };
 
   // Validate all non-secret inputs before any cloud API call.
@@ -39,7 +42,12 @@ function parseInputs(): ActionInputs {
     containerImage: raw.containerImage || undefined,
     containerPort: raw.containerPort || undefined,
     haproxyCfg: raw.haproxyCfg || undefined,
+    haproxyFragment: raw.haproxyFragment || undefined,
+    haproxyFragmentName: raw.haproxyFragmentName || undefined,
     firewallEnabled: raw.firewallEnabled === "true",
+    firewallExtraPorts: raw.firewallExtraPorts
+      ? raw.firewallExtraPorts.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined,
   };
 }
 
@@ -76,7 +84,16 @@ function logInputs(inputs: ActionInputs): void {
     `  haproxy_cfg:     ${inputs.haproxyCfg ?? "(not set)"}`,
   );
   core.info(
+    `  haproxy_fragment: ${inputs.haproxyFragment ?? "(not set)"}`,
+  );
+  core.info(
+    `  haproxy_fragment_name: ${inputs.haproxyFragmentName ?? "(not set)"}`,
+  );
+  core.info(
     `  firewall_enabled: ${String(inputs.firewallEnabled)}`,
+  );
+  core.info(
+    `  firewall_extra_ports: ${inputs.firewallExtraPorts?.join(", ") ?? "(not set)"}`,
   );
 }
 

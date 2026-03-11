@@ -13,7 +13,10 @@ export interface ValidatableInputs {
   containerImage: string;
   containerPort: string;
   haproxyCfg: string;
+  haproxyFragment: string;
+  haproxyFragmentName: string;
   firewallEnabled: string;
+  firewallExtraPorts: string;
 }
 
 /** Allowlist patterns — each must match the entire value. */
@@ -101,10 +104,31 @@ const rules: {
     optional: true,
   },
   {
+    field: "haproxyFragment",
+    label: "haproxy_fragment",
+    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+    hint: 'Must be "." or a relative/absolute path without ".." or special characters.',
+    optional: true,
+  },
+  {
+    field: "haproxyFragmentName",
+    label: "haproxy_fragment_name",
+    pattern: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/,
+    hint: "Must start with alphanumeric; only letters, digits, dots, hyphens, underscores (max 63 chars).",
+    optional: true,
+  },
+  {
     field: "firewallEnabled",
     label: "firewall_enabled",
     pattern: /^(true|false)$/,
     hint: 'Must be exactly "true" or "false".',
+    optional: true,
+  },
+  {
+    field: "firewallExtraPorts",
+    label: "firewall_extra_ports",
+    pattern: /^[0-9, ]*$/,
+    hint: 'Must contain only digits, commas, and spaces.',
     optional: true,
   },
 ];

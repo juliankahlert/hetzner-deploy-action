@@ -21,7 +21,10 @@ const validInputs: ValidatableInputs = {
   containerImage: "",
   containerPort: "",
   haproxyCfg: "",
+  haproxyFragment: "",
+  haproxyFragmentName: "",
   firewallEnabled: "",
+  firewallExtraPorts: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -409,6 +412,95 @@ describe("validateInputs — containerPort (optional)", () => {
   it("rejects malformed containerPort separators", () => {
     expect(() =>
       validateInputs(withOverride({ containerPort: "8080::80" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// haproxyFragment (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — haproxyFragment (optional)", () => {
+  it('accepts "."', () => {
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragment: "." })),
+    ).not.toThrow();
+  });
+
+  it("accepts a relative fragment path", () => {
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragment: "haproxy/fragments/app.cfg" })),
+    ).not.toThrow();
+  });
+
+  it("rejects path traversal", () => {
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragment: "../secrets.cfg" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects shell metacharacters", () => {
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragment: "$(curl evil)" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// haproxyFragmentName (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — haproxyFragmentName (optional)", () => {
+  it("accepts a valid fragment name", () => {
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragmentName: "frontend.api-1" })),
+    ).not.toThrow();
+  });
+
+  it("accepts a max-length fragment name (63 chars)", () => {
+    const name = "a" + "b".repeat(62);
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragmentName: name })),
+    ).not.toThrow();
+  });
+
+  it("rejects fragment name starting with dot", () => {
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragmentName: ".hidden" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects fragment name exceeding 63 chars", () => {
+    const name = "a" + "b".repeat(63);
+    expect(() =>
+      validateInputs(withOverride({ haproxyFragmentName: name })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// firewallExtraPorts (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — firewallExtraPorts (optional)", () => {
+  it("accepts a comma-separated list of ports", () => {
+    expect(() =>
+      validateInputs(withOverride({ firewallExtraPorts: "80, 443, 8080" })),
+    ).not.toThrow();
+  });
+
+  it("accepts an empty string", () => {
+    expect(() =>
+      validateInputs(withOverride({ firewallExtraPorts: "" })),
+    ).not.toThrow();
+  });
+
+  it("rejects slash-separated ranges", () => {
+    expect(() =>
+      validateInputs(withOverride({ firewallExtraPorts: "80/443" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects alphabetic characters", () => {
+    expect(() =>
+      validateInputs(withOverride({ firewallExtraPorts: "80, ssh" })),
     ).toThrow(/INPUT_VALIDATION_/);
   });
 });

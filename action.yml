@@ -71,6 +71,20 @@ inputs:
     description: 'If true, enable the firewall stage'
     required: false
     default: 'true'
+  # Pattern: relative or absolute path without ".." sequences (optional)
+  haproxy_fragment:
+    description: 'Path to an HAProxy config fragment to append when haproxy_cfg is set'
+    required: false
+  # Pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$ (optional)
+  haproxy_fragment_name:
+    description: 'Optional name used for the HAProxy fragment file on the server'
+    required: false
+    default: 'fragment'
+  # Pattern: ^[0-9, -]*$ (optional)
+  firewall_extra_ports:
+    description: 'Comma-separated extra firewall ports to allow, e.g. 8080, 8443'
+    required: false
+    default: ''
 outputs:
   server_ip:
     description: 'Public IP address of the server (IPv4 by default; IPv6 when ipv6_only is true)'

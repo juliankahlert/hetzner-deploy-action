@@ -50,6 +50,7 @@ vi.mock("../src/deploy/podman.js", () => ({
 
 vi.mock("../src/deploy/haproxy.js", () => ({
   deployHaproxy: vi.fn(),
+  deployHaproxyFragment: vi.fn(),
 }));
 
 vi.mock("../src/deploy/firewall.js", () => ({
@@ -69,7 +70,7 @@ import { ensureTargetDir, installSystemdUnit } from "../src/deploy/remoteSetup.j
 import { installPackages } from "../src/deploy/packageInstall.js";
 import { rsyncDeploy } from "../src/deploy/rsync.js";
 import { deployPodman } from "../src/deploy/podman.js";
-import { deployHaproxy } from "../src/deploy/haproxy.js";
+import { deployHaproxy, deployHaproxyFragment } from "../src/deploy/haproxy.js";
 import { configureFirewall } from "../src/deploy/firewall.js";
 import {
   deployPipeline,
@@ -138,6 +139,10 @@ function trackCallOrder(): void {
     callOrder.push(STAGES.haproxy);
     return { configUploaded: true, serviceReloaded: true };
   });
+  vi.mocked(deployHaproxyFragment).mockImplementation(async () => {
+    callOrder.push(STAGES.haproxy);
+    return { configUploaded: true, serviceReloaded: true };
+  });
   vi.mocked(configureFirewall).mockImplementation(async () => {
     callOrder.push(STAGES.firewall);
     return { firewallEnabled: true, rulesApplied: 4 };
@@ -171,6 +176,10 @@ beforeEach(() => {
     serviceRestarted: true,
   });
   vi.mocked(deployHaproxy).mockResolvedValue({
+    configUploaded: true,
+    serviceReloaded: true,
+  });
+  vi.mocked(deployHaproxyFragment).mockResolvedValue({
     configUploaded: true,
     serviceReloaded: true,
   });
@@ -249,12 +258,23 @@ describe("activeStages", () => {
     expect(stages).not.toContain(STAGES.systemd);
   });
 
-  it("includes haproxy only when haproxyCfg is set", () => {
+  it("includes haproxy when haproxyCfg is set", () => {
     const without = activeStages(BASE_INPUTS);
     expect(without).not.toContain(STAGES.haproxy);
 
     const withHaproxy = activeStages(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
     expect(withHaproxy).toContain(STAGES.haproxy);
+  });
+
+  it("includes haproxy when only haproxyFragment is set", () => {
+    const stages = activeStages(
+      withInputs({
+        haproxyFragment: "/etc/haproxy/conf.d/app.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(stages).toContain(STAGES.haproxy);
   });
 
   it("includes firewall only when firewallEnabled is true", () => {
@@ -425,12 +445,39 @@ describe("deployPipeline — conditional skipping", () => {
     await deployPipeline(BASE_INPUTS);
 
     expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyFragment).not.toHaveBeenCalled();
   });
 
   it("executes haproxy stage when haproxyCfg is present", async () => {
     await deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
 
     expect(deployHaproxy).toHaveBeenCalledOnce();
+    expect(deployHaproxyFragment).not.toHaveBeenCalled();
+  });
+
+  it("executes haproxy stage when only haproxyFragment is present", async () => {
+    await deployPipeline(
+      withInputs({
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyFragment).toHaveBeenCalledOnce();
+  });
+
+  it("executes both haproxy config and fragment deployments when both inputs are present", async () => {
+    await deployPipeline(
+      withInputs({
+        haproxyCfg: "/etc/haproxy/haproxy.cfg",
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(deployHaproxy).toHaveBeenCalledOnce();
+    expect(deployHaproxyFragment).toHaveBeenCalledOnce();
   });
 
   it("skips firewall stage when firewallEnabled is falsy", async () => {
@@ -499,6 +546,19 @@ describe("deployPipeline — error propagation", () => {
     await expect(
       deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" })),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: reload failed$/);
+  });
+
+  it("wraps haproxy fragment failure with DEPLOY_PIPELINE_haproxy prefix", async () => {
+    vi.mocked(deployHaproxyFragment).mockRejectedValueOnce(new Error("fragment reload failed"));
+
+    await expect(
+      deployPipeline(
+        withInputs({
+          haproxyFragment: "/tmp/app.fragment.cfg",
+          haproxyFragmentName: "app",
+        }),
+      ),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: fragment reload failed$/);
   });
 
   it("wraps firewall failure with DEPLOY_PIPELINE_firewall prefix", async () => {
@@ -662,6 +722,24 @@ describe("deployPipeline — stage arguments", () => {
     });
   });
 
+  it("passes correct options to deployHaproxyFragment when fragment input is set", async () => {
+    await deployPipeline(
+      withInputs({
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(deployHaproxyFragment).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      fragmentPath: "/tmp/app.fragment.cfg",
+      fragmentName: "app",
+      ipv6Only: false,
+    });
+  });
+
   it("passes correct options to configureFirewall when firewall is enabled", async () => {
     await deployPipeline(withInputs({ firewallEnabled: true }));
 
@@ -670,6 +748,19 @@ describe("deployPipeline — stage arguments", () => {
       user: "deploy",
       privateKey: "PRIVATE_KEY",
       ipv6Only: false,
+      extraPorts: undefined,
+    });
+  });
+
+  it("passes firewall extraPorts from inputs", async () => {
+    await deployPipeline(withInputs({ firewallEnabled: true, firewallExtraPorts: ["8080", "53/udp"] }));
+
+    expect(configureFirewall).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      ipv6Only: false,
+      extraPorts: ["8080", "53/udp"],
     });
   });
 

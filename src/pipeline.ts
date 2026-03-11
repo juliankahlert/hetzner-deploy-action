@@ -6,7 +6,7 @@ import { ensureTargetDir, installSystemdUnit } from "./deploy/remoteSetup.js";
 import { installPackages } from "./deploy/packageInstall.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { deployPodman } from "./deploy/podman.js";
-import { deployHaproxy } from "./deploy/haproxy.js";
+import { deployHaproxy, deployHaproxyFragment } from "./deploy/haproxy.js";
 import { configureFirewall } from "./deploy/firewall.js";
 
 /* ------------------------------------------------------------------ */
@@ -61,8 +61,14 @@ export interface ActionInputs {
   containerPort?: string;
   /** HAProxy config path — enables the haproxy stage when set. */
   haproxyCfg?: string;
+  /** HAProxy fragment path — also enables the haproxy stage when set. */
+  haproxyFragment?: string;
+  /** HAProxy fragment name written on the remote host. */
+  haproxyFragmentName?: string;
   /** Enables the firewall stage when true. */
   firewallEnabled?: boolean;
+  /** Additional firewall ports to allow. */
+  firewallExtraPorts?: string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -92,7 +98,7 @@ export function activeStages(inputs: ActionInputs): StageName[] {
       case STAGES.systemd:
         return Boolean(inputs.serviceName) && !inputs.containerImage;
       case STAGES.haproxy:
-        return Boolean(inputs.haproxyCfg);
+        return Boolean(inputs.haproxyCfg || inputs.haproxyFragment);
       case STAGES.firewall:
         return Boolean(inputs.firewallEnabled);
     }
@@ -231,16 +237,35 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           break;
 
         case STAGES.haproxy:
-          if (!inputs.haproxyCfg) {
-            throw new Error("haproxy_cfg is required for haproxy deployment");
+          if (!inputs.haproxyCfg && !inputs.haproxyFragment) {
+            throw new Error(
+              "haproxy_cfg or haproxy_fragment is required for haproxy deployment",
+            );
           }
-          haproxyResult = await deployHaproxy({
-            host: server.ip,
-            user: inputs.sshUser,
-            privateKey: inputs.sshPrivateKey,
-            cfgPath: inputs.haproxyCfg,
-            ipv6Only: inputs.ipv6Only,
-          });
+          if (inputs.haproxyCfg) {
+            haproxyResult = await deployHaproxy({
+              host: server.ip,
+              user: inputs.sshUser,
+              privateKey: inputs.sshPrivateKey,
+              cfgPath: inputs.haproxyCfg,
+              ipv6Only: inputs.ipv6Only,
+            });
+          }
+          if (inputs.haproxyFragment) {
+            if (!inputs.haproxyFragmentName) {
+              throw new Error(
+                "haproxy_fragment_name is required for haproxy fragment deployment",
+              );
+            }
+            haproxyResult = await deployHaproxyFragment({
+              host: server.ip,
+              user: inputs.sshUser,
+              privateKey: inputs.sshPrivateKey,
+              fragmentPath: inputs.haproxyFragment,
+              fragmentName: inputs.haproxyFragmentName,
+              ipv6Only: inputs.ipv6Only,
+            });
+          }
           core.info("HAProxy configuration deployed and service reloaded.");
           break;
 
@@ -250,6 +275,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
             user: inputs.sshUser,
             privateKey: inputs.sshPrivateKey,
             ipv6Only: inputs.ipv6Only,
+            extraPorts: inputs.firewallExtraPorts,
           });
           core.info("Firewall configured and enabled.");
           break;

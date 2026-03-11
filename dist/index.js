@@ -28442,6 +28442,65 @@ async function deployHaproxy(opts) {
     });
     return result;
 }
+/**
+ * Deploy an HAProxy fragment to a remote host.
+ *
+ * Steps:
+ *   1. Read the local HAProxy fragment file.
+ *   2. Upload it to `/etc/haproxy/conf.d/<name>.cfg` on the remote host.
+ *   3. Validate the full HAProxy configuration with `haproxy -c`.
+ *   4. Reload the HAProxy service.
+ */
+async function deployHaproxyFragment(opts) {
+    const { host, user, privateKey, fragmentPath, fragmentName, ipv6Only = false, } = opts;
+    const result = {
+        configUploaded: false,
+        serviceReloaded: false,
+    };
+    const remotePath = `/etc/haproxy/conf.d/${fragmentName}.cfg`;
+    const validatePath = "/etc/haproxy/haproxy.cfg";
+    lib_core.info(`[${haproxy_ERR_UPLOAD}] Reading HAProxy fragment ${fragmentName} from ${fragmentPath}…`);
+    let fragmentContent;
+    try {
+        fragmentContent = external_node_fs_namespaceObject.readFileSync(fragmentPath, "utf-8");
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${haproxy_ERR_UPLOAD}: failed to read local fragment "${fragmentName}" from ${fragmentPath}: ${msg}`);
+    }
+    await withKeyFile(privateKey, async (keyPath) => {
+        lib_core.info(`[${haproxy_ERR_UPLOAD}] Uploading HAProxy fragment ${fragmentName} to ${remotePath}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${fragmentContent}\nHAPROXY_CFG_EOF`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${haproxy_ERR_UPLOAD}: failed to upload fragment "${fragmentName}": ${msg}`);
+        }
+        result.configUploaded = true;
+        lib_core.info(`[${haproxy_ERR_UPLOAD}] HAProxy fragment written to ${remotePath}.`);
+        lib_core.info(`[${ERR_VALIDATE}] Validating HAProxy configuration after uploading fragment ${fragmentName}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo haproxy -c -f ${shellQuote(validatePath)}`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_VALIDATE}: failed to validate HAProxy configuration after uploading fragment "${fragmentName}": ${msg}`);
+        }
+        lib_core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
+        lib_core.info(`[${ERR_RELOAD}] Reloading haproxy service…`);
+        try {
+            await sshExec(keyPath, user, host, "sudo systemctl reload haproxy", ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_RELOAD}: failed to reload haproxy after deploying fragment "${fragmentName}": ${msg}`);
+        }
+        result.serviceReloaded = true;
+        lib_core.info(`[${ERR_RELOAD}] haproxy service reloaded successfully.`);
+    });
+    return result;
+}
 //# sourceMappingURL=haproxy.js.map
 ;// CONCATENATED MODULE: ./lib/deploy/firewall.js
 
@@ -28624,7 +28683,7 @@ function activeStages(inputs) {
             case STAGES.systemd:
                 return Boolean(inputs.serviceName) && !inputs.containerImage;
             case STAGES.haproxy:
-                return Boolean(inputs.haproxyCfg);
+                return Boolean(inputs.haproxyCfg || inputs.haproxyFragment);
             case STAGES.firewall:
                 return Boolean(inputs.firewallEnabled);
         }
@@ -28737,16 +28796,31 @@ async function deployPipeline(inputs) {
                     lib_core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
                     break;
                 case STAGES.haproxy:
-                    if (!inputs.haproxyCfg) {
-                        throw new Error("haproxy_cfg is required for haproxy deployment");
+                    if (!inputs.haproxyCfg && !inputs.haproxyFragment) {
+                        throw new Error("haproxy_cfg or haproxy_fragment is required for haproxy deployment");
                     }
-                    haproxyResult = await deployHaproxy({
-                        host: server.ip,
-                        user: inputs.sshUser,
-                        privateKey: inputs.sshPrivateKey,
-                        cfgPath: inputs.haproxyCfg,
-                        ipv6Only: inputs.ipv6Only,
-                    });
+                    if (inputs.haproxyCfg) {
+                        haproxyResult = await deployHaproxy({
+                            host: server.ip,
+                            user: inputs.sshUser,
+                            privateKey: inputs.sshPrivateKey,
+                            cfgPath: inputs.haproxyCfg,
+                            ipv6Only: inputs.ipv6Only,
+                        });
+                    }
+                    if (inputs.haproxyFragment) {
+                        if (!inputs.haproxyFragmentName) {
+                            throw new Error("haproxy_fragment_name is required for haproxy fragment deployment");
+                        }
+                        haproxyResult = await deployHaproxyFragment({
+                            host: server.ip,
+                            user: inputs.sshUser,
+                            privateKey: inputs.sshPrivateKey,
+                            fragmentPath: inputs.haproxyFragment,
+                            fragmentName: inputs.haproxyFragmentName,
+                            ipv6Only: inputs.ipv6Only,
+                        });
+                    }
                     lib_core.info("HAProxy configuration deployed and service reloaded.");
                     break;
                 case STAGES.firewall:
@@ -28755,6 +28829,7 @@ async function deployPipeline(inputs) {
                         user: inputs.sshUser,
                         privateKey: inputs.sshPrivateKey,
                         ipv6Only: inputs.ipv6Only,
+                        extraPorts: inputs.firewallExtraPorts,
                     });
                     lib_core.info("Firewall configured and enabled.");
                     break;
@@ -28874,10 +28949,31 @@ const rules = [
         optional: true,
     },
     {
+        field: "haproxyFragment",
+        label: "haproxy_fragment",
+        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+        hint: 'Must be "." or a relative/absolute path without ".." or special characters.',
+        optional: true,
+    },
+    {
+        field: "haproxyFragmentName",
+        label: "haproxy_fragment_name",
+        pattern: /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/,
+        hint: "Must start with alphanumeric; only letters, digits, dots, hyphens, underscores (max 63 chars).",
+        optional: true,
+    },
+    {
         field: "firewallEnabled",
         label: "firewall_enabled",
         pattern: /^(true|false)$/,
         hint: 'Must be exactly "true" or "false".',
+        optional: true,
+    },
+    {
+        field: "firewallExtraPorts",
+        label: "firewall_extra_ports",
+        pattern: /^[0-9, ]*$/,
+        hint: 'Must contain only digits, commas, and spaces.',
         optional: true,
     },
 ];
@@ -28921,7 +29017,10 @@ function parseInputs() {
         containerImage: lib_core.getInput("container_image"),
         containerPort: lib_core.getInput("container_port"),
         haproxyCfg: lib_core.getInput("haproxy_cfg"),
+        haproxyFragment: lib_core.getInput("haproxy_fragment"),
+        haproxyFragmentName: lib_core.getInput("haproxy_fragment_name"),
         firewallEnabled: lib_core.getInput("firewall_enabled"),
+        firewallExtraPorts: lib_core.getInput("firewall_extra_ports"),
     };
     // Validate all non-secret inputs before any cloud API call.
     validateInputs(raw);
@@ -28941,7 +29040,12 @@ function parseInputs() {
         containerImage: raw.containerImage || undefined,
         containerPort: raw.containerPort || undefined,
         haproxyCfg: raw.haproxyCfg || undefined,
+        haproxyFragment: raw.haproxyFragment || undefined,
+        haproxyFragmentName: raw.haproxyFragmentName || undefined,
         firewallEnabled: raw.firewallEnabled === "true",
+        firewallExtraPorts: raw.firewallExtraPorts
+            ? raw.firewallExtraPorts.split(",").map((s) => s.trim()).filter(Boolean)
+            : undefined,
     };
 }
 function maskSecrets(inputs) {
@@ -28969,7 +29073,10 @@ function logInputs(inputs) {
     lib_core.info(`  container_image: ${inputs.containerImage ?? "(not set)"}`);
     lib_core.info(`  container_port: ${inputs.containerPort ?? "(not set)"}`);
     lib_core.info(`  haproxy_cfg:     ${inputs.haproxyCfg ?? "(not set)"}`);
+    lib_core.info(`  haproxy_fragment: ${inputs.haproxyFragment ?? "(not set)"}`);
+    lib_core.info(`  haproxy_fragment_name: ${inputs.haproxyFragmentName ?? "(not set)"}`);
     lib_core.info(`  firewall_enabled: ${String(inputs.firewallEnabled)}`);
+    lib_core.info(`  firewall_extra_ports: ${inputs.firewallExtraPorts?.join(", ") ?? "(not set)"}`);
 }
 async function run() {
     const inputs = parseInputs();
