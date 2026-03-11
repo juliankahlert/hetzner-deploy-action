@@ -73,6 +73,21 @@ describe("HetznerClient", () => {
       });
       expect(init?.body).toBeUndefined();
     });
+
+    it("does not append a dangling query string for empty params", async () => {
+      const payload = { servers: [] };
+      mockFetchJson(fetchMock, payload);
+
+      const client = createClient(TOKEN);
+      const result = await client.get("/servers", {});
+
+      expect(result).toEqual(payload);
+      expect(fetchMock).toHaveBeenCalledOnce();
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("https://api.hetzner.cloud/v1/servers");
+      expect(init?.method).toBe("GET");
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -143,6 +158,54 @@ describe("HetznerClient", () => {
       await expect(client.get("/servers")).rejects.toThrow(HetznerApiError);
       // Only one fetch call — no retries
       expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back to unknown code and HTTP status when error body is not JSON", async () => {
+      fetchMock.mockResolvedValueOnce(
+        new Response("not json", {
+          status: 400,
+          headers: { "Content-Type": "text/plain" },
+        }),
+      );
+
+      const client = createClient(TOKEN);
+      const error = await client.get("/servers").catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(HetznerApiError);
+      const apiErr = error as InstanceType<typeof HetznerApiError>;
+      expect(apiErr.status).toBe(400);
+      expect(apiErr.code).toBe("unknown");
+      expect(apiErr.message).toBe("HTTP 400");
+    });
+
+    it("falls back to unknown code when error JSON omits code", async () => {
+      mockFetchJson(
+        fetchMock,
+        { error: { message: "Bad request payload" } },
+        400,
+      );
+
+      const client = createClient(TOKEN);
+      const error = await client.get("/servers").catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(HetznerApiError);
+      const apiErr = error as InstanceType<typeof HetznerApiError>;
+      expect(apiErr.status).toBe(400);
+      expect(apiErr.code).toBe("unknown");
+      expect(apiErr.message).toBe("Bad request payload");
+    });
+
+    it("falls back to HTTP status message when error JSON omits message", async () => {
+      mockFetchJson(fetchMock, { error: { code: "bad_request" } }, 400);
+
+      const client = createClient(TOKEN);
+      const error = await client.get("/servers").catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(HetznerApiError);
+      const apiErr = error as InstanceType<typeof HetznerApiError>;
+      expect(apiErr.status).toBe(400);
+      expect(apiErr.code).toBe("bad_request");
+      expect(apiErr.message).toBe("HTTP 400");
     });
   });
 
