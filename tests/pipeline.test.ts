@@ -1,0 +1,551 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// ---------------------------------------------------------------------------
+// Module mocks — declared before imports that trigger them
+// ---------------------------------------------------------------------------
+
+vi.mock("@actions/core", async () => {
+  const { createCoreMock } = await import("./helpers/mockCore");
+  return createCoreMock();
+});
+
+// Hetzner modules — mock at module boundary
+vi.mock("../src/hetzner/client.js", () => ({
+  createClient: vi.fn(),
+}));
+
+vi.mock("../src/hetzner/sshKeys.js", () => ({
+  ensureSshKey: vi.fn(),
+}));
+
+vi.mock("../src/hetzner/findOrCreateServer.js", () => ({
+  findOrCreateServer: vi.fn(),
+}));
+
+// Deploy modules — mock at module boundary
+vi.mock("../src/deploy/remoteSetup.js", () => ({
+  ensureTargetDir: vi.fn(),
+  installSystemdUnit: vi.fn(),
+}));
+
+vi.mock("../src/deploy/packageInstall.js", () => ({
+  installPackages: vi.fn(),
+}));
+
+vi.mock("../src/deploy/rsync.js", () => ({
+  rsyncDeploy: vi.fn(),
+}));
+
+// ---------------------------------------------------------------------------
+// Imports (receive mocked implementations)
+// ---------------------------------------------------------------------------
+
+import * as core from "@actions/core";
+import { createClient } from "../src/hetzner/client.js";
+import { ensureSshKey } from "../src/hetzner/sshKeys.js";
+import { findOrCreateServer } from "../src/hetzner/findOrCreateServer.js";
+import { ensureTargetDir, installSystemdUnit } from "../src/deploy/remoteSetup.js";
+import { installPackages } from "../src/deploy/packageInstall.js";
+import { rsyncDeploy } from "../src/deploy/rsync.js";
+import {
+  deployPipeline,
+  activeStages,
+  STAGES,
+  STAGE_ORDER,
+  type ActionInputs,
+} from "../src/pipeline";
+
+// ---------------------------------------------------------------------------
+// Constants & helpers
+// ---------------------------------------------------------------------------
+
+const FAKE_SERVER = {
+  id: 42,
+  ip: "1.2.3.4",
+  status: "running",
+  ipv6Only: false,
+};
+
+const FAKE_SSH_KEY = {
+  id: 7,
+  name: "myproject-deploy",
+  fingerprint: "aa:bb:cc",
+};
+
+/** Minimal valid inputs with all optional features disabled. */
+const BASE_INPUTS: ActionInputs = {
+  hcloudToken: "fake-token",
+  serverName: "test-server",
+  projectTag: "myproject",
+  image: "ubuntu-24.04",
+  serverType: "cx22",
+  ipv6Only: false,
+  publicKey: "ssh-ed25519 AAAA",
+  sshPrivateKey: "PRIVATE_KEY",
+  sshUser: "deploy",
+  serviceName: "",
+  sourceDir: ".",
+  targetDir: "/opt/app",
+};
+
+/** Build inputs with overrides. */
+function withInputs(overrides: Partial<ActionInputs>): ActionInputs {
+  return { ...BASE_INPUTS, ...overrides };
+}
+
+/** Track the order in which deploy stages are invoked. */
+let callOrder: string[];
+
+function trackCallOrder(): void {
+  vi.mocked(installPackages).mockImplementation(async () => {
+    callOrder.push(STAGES.installPackages);
+  });
+  vi.mocked(ensureTargetDir).mockImplementation(async () => {
+    callOrder.push(STAGES.ensureTargetDir);
+  });
+  vi.mocked(rsyncDeploy).mockImplementation(async () => {
+    callOrder.push(STAGES.rsyncDeploy);
+  });
+  vi.mocked(installSystemdUnit).mockImplementation(async () => {
+    callOrder.push(STAGES.systemd);
+    return { unitInstalled: true, serviceRestarted: true };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reset mocks before each test
+// ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  callOrder = [];
+
+  // Default Hetzner mocks — provisioning always succeeds
+  vi.mocked(createClient).mockReturnValue({} as ReturnType<typeof createClient>);
+  vi.mocked(ensureSshKey).mockResolvedValue(FAKE_SSH_KEY);
+  vi.mocked(findOrCreateServer).mockResolvedValue(FAKE_SERVER);
+
+  // Default deploy mocks — all stages succeed
+  vi.mocked(installPackages).mockResolvedValue(undefined);
+  vi.mocked(ensureTargetDir).mockResolvedValue(undefined);
+  vi.mocked(rsyncDeploy).mockResolvedValue(undefined);
+  vi.mocked(installSystemdUnit).mockResolvedValue({
+    unitInstalled: true,
+    serviceRestarted: true,
+  });
+});
+
+// ===========================================================================
+// 1. STAGE_ORDER constant
+// ===========================================================================
+
+describe("STAGE_ORDER", () => {
+  it("contains exactly 7 stages", () => {
+    expect(STAGE_ORDER).toHaveLength(7);
+  });
+
+  it("has the correct ordering", () => {
+    expect(STAGE_ORDER).toEqual([
+      "installPackages",
+      "ensureTargetDir",
+      "rsyncDeploy",
+      "podman",
+      "systemd",
+      "haproxy",
+      "firewall",
+    ]);
+  });
+});
+
+// ===========================================================================
+// 2. activeStages — conditional skipping
+// ===========================================================================
+
+describe("activeStages", () => {
+  it("returns only core stages when all optional inputs are absent", () => {
+    const stages = activeStages(BASE_INPUTS);
+
+    expect(stages).toEqual([
+      STAGES.installPackages,
+      STAGES.ensureTargetDir,
+      STAGES.rsyncDeploy,
+    ]);
+  });
+
+  it("includes podman when containerImage is set", () => {
+    const stages = activeStages(withInputs({ containerImage: "docker.io/myapp:latest" }));
+
+    expect(stages).toContain(STAGES.podman);
+  });
+
+  it("excludes systemd when containerImage is set (even with serviceName)", () => {
+    const stages = activeStages(
+      withInputs({ containerImage: "docker.io/myapp:latest", serviceName: "myapp" }),
+    );
+
+    expect(stages).toContain(STAGES.podman);
+    expect(stages).not.toContain(STAGES.systemd);
+  });
+
+  it("includes systemd when serviceName is set and no containerImage", () => {
+    const stages = activeStages(withInputs({ serviceName: "myapp" }));
+
+    expect(stages).toContain(STAGES.systemd);
+    expect(stages).not.toContain(STAGES.podman);
+  });
+
+  it("excludes systemd when serviceName is empty and no containerImage", () => {
+    const stages = activeStages(withInputs({ serviceName: "" }));
+
+    expect(stages).not.toContain(STAGES.systemd);
+  });
+
+  it("includes haproxy only when haproxyCfg is set", () => {
+    const without = activeStages(BASE_INPUTS);
+    expect(without).not.toContain(STAGES.haproxy);
+
+    const withHaproxy = activeStages(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
+    expect(withHaproxy).toContain(STAGES.haproxy);
+  });
+
+  it("includes firewall only when firewallEnabled is true", () => {
+    const without = activeStages(BASE_INPUTS);
+    expect(without).not.toContain(STAGES.firewall);
+
+    const withFirewall = activeStages(withInputs({ firewallEnabled: true }));
+    expect(withFirewall).toContain(STAGES.firewall);
+  });
+
+  it("excludes firewall when firewallEnabled is explicitly false", () => {
+    const stages = activeStages(withInputs({ firewallEnabled: false }));
+
+    expect(stages).not.toContain(STAGES.firewall);
+  });
+
+  it("preserves STAGE_ORDER ordering when multiple optional stages are active", () => {
+    const stages = activeStages(
+      withInputs({
+        serviceName: "myapp",
+        haproxyCfg: "/etc/haproxy/haproxy.cfg",
+        firewallEnabled: true,
+      }),
+    );
+
+    // All should be present in order
+    expect(stages).toEqual([
+      STAGES.installPackages,
+      STAGES.ensureTargetDir,
+      STAGES.rsyncDeploy,
+      STAGES.systemd,
+      STAGES.haproxy,
+      STAGES.firewall,
+    ]);
+  });
+});
+
+// ===========================================================================
+// 3. deployPipeline — stage execution ordering
+// ===========================================================================
+
+describe("deployPipeline — stage ordering", () => {
+  it("calls core stages in order: installPackages → ensureTargetDir → rsyncDeploy", async () => {
+    trackCallOrder();
+
+    await deployPipeline(BASE_INPUTS);
+
+    expect(callOrder).toEqual([
+      STAGES.installPackages,
+      STAGES.ensureTargetDir,
+      STAGES.rsyncDeploy,
+    ]);
+  });
+
+  it("calls systemd after rsyncDeploy when serviceName is set", async () => {
+    trackCallOrder();
+
+    await deployPipeline(withInputs({ serviceName: "myapp" }));
+
+    expect(callOrder).toEqual([
+      STAGES.installPackages,
+      STAGES.ensureTargetDir,
+      STAGES.rsyncDeploy,
+      STAGES.systemd,
+    ]);
+  });
+
+  it("does not call installSystemdUnit when serviceName is empty", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(installSystemdUnit).not.toHaveBeenCalled();
+  });
+
+  it("does not call installSystemdUnit when containerImage is present", async () => {
+    await deployPipeline(
+      withInputs({ containerImage: "docker.io/myapp:latest", serviceName: "myapp" }),
+    );
+
+    expect(installSystemdUnit).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// 4. deployPipeline — Hetzner provisioning
+// ===========================================================================
+
+describe("deployPipeline — Hetzner provisioning", () => {
+  it("creates client with the provided token", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(createClient).toHaveBeenCalledWith("fake-token");
+  });
+
+  it("calls ensureSshKey with projectTag-deploy name and publicKey", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(ensureSshKey).toHaveBeenCalledWith(
+      expect.anything(), // client
+      "myproject-deploy",
+      "ssh-ed25519 AAAA",
+    );
+  });
+
+  it("calls findOrCreateServer with expected options", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(findOrCreateServer).toHaveBeenCalledWith(
+      expect.anything(), // client
+      expect.objectContaining({
+        name: "test-server",
+        projectTag: "myproject",
+        image: "ubuntu-24.04",
+        serverType: "cx22",
+        ipv6Only: false,
+        sshKeyIds: [FAKE_SSH_KEY.id],
+      }),
+    );
+  });
+
+  it("sets server_ip, server_id, and server_status outputs", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(core.setOutput).toHaveBeenCalledWith("server_ip", "1.2.3.4");
+    expect(core.setOutput).toHaveBeenCalledWith("server_id", "42");
+    expect(core.setOutput).toHaveBeenCalledWith("server_status", "running");
+  });
+});
+
+// ===========================================================================
+// 5. deployPipeline — conditional stage skipping
+// ===========================================================================
+
+describe("deployPipeline — conditional skipping", () => {
+  it("skips podman stage when containerImage is absent", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    // core.info should not mention podman stage — no podman call exists
+    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
+    const podmanStepCalls = infoCalls.filter((msg) => /\[podman\]/.test(msg));
+    expect(podmanStepCalls).toHaveLength(0);
+  });
+
+  it("executes podman stage when containerImage is present", async () => {
+    await deployPipeline(withInputs({ containerImage: "docker.io/myapp:latest" }));
+
+    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
+    const podmanMentions = infoCalls.filter((msg) => /\[podman\]/.test(msg));
+    expect(podmanMentions.length).toBeGreaterThan(0);
+  });
+
+  it("skips haproxy stage when haproxyCfg is absent", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
+    const haproxyStepCalls = infoCalls.filter((msg) => /\[haproxy\]/.test(msg));
+    expect(haproxyStepCalls).toHaveLength(0);
+  });
+
+  it("executes haproxy stage when haproxyCfg is present", async () => {
+    await deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
+
+    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
+    const haproxyMentions = infoCalls.filter((msg) => /\[haproxy\]/.test(msg));
+    expect(haproxyMentions.length).toBeGreaterThan(0);
+  });
+
+  it("skips firewall stage when firewallEnabled is falsy", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
+    const firewallStepCalls = infoCalls.filter((msg) => /\[firewall\]/.test(msg));
+    expect(firewallStepCalls).toHaveLength(0);
+  });
+
+  it("executes firewall stage when firewallEnabled is true", async () => {
+    await deployPipeline(withInputs({ firewallEnabled: true }));
+
+    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
+    const firewallMentions = infoCalls.filter((msg) => /\[firewall\]/.test(msg));
+    expect(firewallMentions.length).toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
+// 6. deployPipeline — error propagation with DEPLOY_PIPELINE_ prefix
+// ===========================================================================
+
+describe("deployPipeline — error propagation", () => {
+  it("wraps installPackages failure with DEPLOY_PIPELINE_installPackages prefix", async () => {
+    vi.mocked(installPackages).mockRejectedValueOnce(new Error("apt-get failed"));
+
+    await expect(deployPipeline(BASE_INPUTS)).rejects.toThrow(
+      /^DEPLOY_PIPELINE_installPackages: apt-get failed$/,
+    );
+  });
+
+  it("wraps ensureTargetDir failure with DEPLOY_PIPELINE_ensureTargetDir prefix", async () => {
+    vi.mocked(ensureTargetDir).mockRejectedValueOnce(new Error("mkdir failed"));
+
+    await expect(deployPipeline(BASE_INPUTS)).rejects.toThrow(
+      /^DEPLOY_PIPELINE_ensureTargetDir: mkdir failed$/,
+    );
+  });
+
+  it("wraps rsyncDeploy failure with DEPLOY_PIPELINE_rsyncDeploy prefix", async () => {
+    vi.mocked(rsyncDeploy).mockRejectedValueOnce(new Error("rsync exited with code 1"));
+
+    await expect(deployPipeline(BASE_INPUTS)).rejects.toThrow(
+      /^DEPLOY_PIPELINE_rsyncDeploy: rsync exited with code 1$/,
+    );
+  });
+
+  it("wraps systemd failure with DEPLOY_PIPELINE_systemd prefix", async () => {
+    vi.mocked(installSystemdUnit).mockRejectedValueOnce(
+      new Error("daemon-reload failed"),
+    );
+
+    await expect(
+      deployPipeline(withInputs({ serviceName: "myapp" })),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_systemd: daemon-reload failed$/);
+  });
+
+  it("wraps non-Error thrown values in the DEPLOY_PIPELINE_ prefix", async () => {
+    vi.mocked(installPackages).mockRejectedValueOnce("string error");
+
+    await expect(deployPipeline(BASE_INPUTS)).rejects.toThrow(
+      /^DEPLOY_PIPELINE_installPackages: string error$/,
+    );
+  });
+
+  it("stops execution after the first failing stage", async () => {
+    vi.mocked(installPackages).mockRejectedValueOnce(new Error("fail"));
+
+    await deployPipeline(BASE_INPUTS).catch(() => {});
+
+    expect(ensureTargetDir).not.toHaveBeenCalled();
+    expect(rsyncDeploy).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// 7. deployPipeline — IPv6 error hint
+// ===========================================================================
+
+describe("deployPipeline — IPv6 error handling", () => {
+  const IPV6_SERVER = {
+    id: 42,
+    ip: "2001:db8::1",
+    status: "running",
+    ipv6Only: true,
+  };
+
+  beforeEach(() => {
+    vi.mocked(findOrCreateServer).mockResolvedValue(IPV6_SERVER);
+  });
+
+  it("emits IPv6 warning when ipv6Only is enabled", async () => {
+    await deployPipeline(withInputs({ ipv6Only: true }));
+
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining("ipv6_only is enabled"),
+    );
+  });
+
+  it("wraps stage error with IPv6 hint when ipv6Only is true", async () => {
+    vi.mocked(installPackages).mockRejectedValueOnce(new Error("connection refused"));
+
+    await expect(
+      deployPipeline(withInputs({ ipv6Only: true })),
+    ).rejects.toThrow(/DEPLOY_PIPELINE_installPackages.*IPv6-only server failed/);
+  });
+
+  it("includes runner IPv6 hint in IPv6 error message", async () => {
+    vi.mocked(rsyncDeploy).mockRejectedValueOnce(new Error("timeout"));
+
+    await expect(
+      deployPipeline(withInputs({ ipv6Only: true })),
+    ).rejects.toThrow(/outbound IPv6 connectivity/);
+  });
+
+  it("does not add IPv6 hint when ipv6Only is false", async () => {
+    vi.mocked(installPackages).mockRejectedValueOnce(new Error("connection refused"));
+
+    await expect(deployPipeline(BASE_INPUTS)).rejects.toThrow(
+      /^DEPLOY_PIPELINE_installPackages: connection refused$/,
+    );
+  });
+});
+
+// ===========================================================================
+// 8. deployPipeline — passes correct arguments to deploy stages
+// ===========================================================================
+
+describe("deployPipeline — stage arguments", () => {
+  it("passes server IP and SSH credentials to installPackages", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(installPackages).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      ipv6Only: false,
+    });
+  });
+
+  it("passes server IP, SSH credentials, and targetDir to ensureTargetDir", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(ensureTargetDir).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      targetDir: "/opt/app",
+      ipv6Only: false,
+    });
+  });
+
+  it("passes correct options to rsyncDeploy", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(rsyncDeploy).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      sourceDir: ".",
+      targetDir: "/opt/app",
+      sshKey: "PRIVATE_KEY",
+      ipv6Only: false,
+    });
+  });
+
+  it("passes correct options to installSystemdUnit", async () => {
+    await deployPipeline(withInputs({ serviceName: "myapp" }));
+
+    expect(installSystemdUnit).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      targetDir: "/opt/app",
+      serviceName: "myapp",
+      ipv6Only: false,
+    });
+  });
+});

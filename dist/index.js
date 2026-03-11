@@ -27560,7 +27560,7 @@ var __webpack_exports__ = {};
 "use strict";
 
 // EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
-var core = __nccwpck_require__(7484);
+var lib_core = __nccwpck_require__(7484);
 ;// CONCATENATED MODULE: ./node_modules/hetzner-ts/dist/index.js
 var o=class{token;baseUrl;constructor(e,s){this.token=e,this.baseUrl=s||"https://api.hetzner.cloud/v1"}async request(e,s={}){let r=await fetch(`${this.baseUrl}${e}`,{...s,headers:{...s.headers||{},Authorization:`Bearer ${this.token}`,"Content-Type":"application/json"}}),t=r.status===204?null:await r.json();return r.ok?{success:!0,response:t}:{success:!1,response:t}}};var u=class extends o{async get(){return this.request("/pricing")}};var p=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/firewalls/actions${r?`?${r}`:""}`)}async get(e,s){return this.request(`/firewalls/${e}/actions/${s}`)}async applyToResources(e,s){return this.request(`/firewalls/${e}/actions/apply_to_resources`,{method:"POST",body:JSON.stringify({apply_to:s})})}async removeFromResources(e,s){return this.request(`/firewalls/${e}/actions/remove_from_resources`,{method:"POST",body:JSON.stringify({remove_from:s})})}async setRules(e,s){return this.request(`/firewalls/${e}/actions/set_rules`,{method:"POST",body:JSON.stringify({rules:s})})}async getFirewallActions(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/firewalls/${e}/actions${t?`?${t}`:""}`)}async getFirewallAction(e,s){return this.request(`/firewalls/${e}/actions/${s}`)}};var m=class extends o{_actions=null;get actions(){return this._actions||(this._actions=new p(this.token)),this._actions}async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/firewalls${r?`?${r}`:""}`)}async create(e){return this.request("/firewalls",{method:"POST",body:JSON.stringify(e)})}async get(e){return this.request(`/firewalls/${e}`)}async update(e,s){return this.request(`/firewalls/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/firewalls/${e}`,{method:"DELETE"})}};var l=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/floating_ips/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/floating_ips/actions/${e}`)}async listForFloatingIP(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/floating_ips/${e}/actions${t?`?${t}`:""}`)}async assign(e,s){return this.request(`/floating_ips/${e}/actions/assign`,{method:"POST",body:JSON.stringify(s)})}async unassign(e){return this.request(`/floating_ips/${e}/actions/unassign`,{method:"POST"})}async changeDNSPTR(e,s){return this.request(`/floating_ips/${e}/actions/change_dns_ptr`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/floating_ips/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}async getForFloatingIP(e,s){return this.request(`/floating_ips/${e}/actions/${s}`)}};var P=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/floating_ips${r?`?${r}`:""}`)}async get(e){return this.request(`/floating_ips/${e}`)}async create(e){return this.request("/floating_ips",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/floating_ips/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/floating_ips/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new l(this.token)),this._actions}};var d=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/locations${r?`?${r}`:""}`)}async get(e){return this.request(`/locations/${e}`)}},f=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/datacenters${r?`?${r}`:""}`)}async get(e){return this.request(`/datacenters/${e}`)}};var y=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/networks/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/networks/actions/${e}`)}async listForNetwork(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/networks/${e}/actions${t?`?${t}`:""}`)}async getForNetwork(e,s){return this.request(`/networks/${e}/actions/${s}`)}async addRoute(e,s){return this.request(`/networks/${e}/actions/add_route`,{method:"POST",body:JSON.stringify(s)})}async deleteRoute(e,s){return this.request(`/networks/${e}/actions/delete_route`,{method:"POST",body:JSON.stringify(s)})}async addSubnet(e,s){return this.request(`/networks/${e}/actions/add_subnet`,{method:"POST",body:JSON.stringify(s)})}async deleteSubnet(e,s){return this.request(`/networks/${e}/actions/delete_subnet`,{method:"POST",body:JSON.stringify(s)})}async changeIPRange(e,s){return this.request(`/networks/${e}/actions/change_ip_range`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/networks/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}};var g=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/networks${r?`?${r}`:""}`)}async create(e){return this.request("/networks",{method:"POST",body:JSON.stringify(e)})}async get(e){return this.request(`/networks/${e}`)}async update(e,s){return this.request(`/networks/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/networks/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new y(this.token)),this._actions}};var A=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/certificates/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/certificates/actions/${e}`)}async listForCertificate(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{Array.isArray(a)?a.forEach(c=>r.append(n,c.toString())):a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/certificates/${e}/actions${t?`?${t}`:""}`)}async getForCertificate(e,s){return this.request(`/certificates/${e}/actions/${s}`)}async retry(e){return this.request(`/certificates/${e}/actions/retry`,{method:"POST"})}};var h=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/certificates${r?`?${r}`:""}`)}async get(e){return this.request(`/certificates/${e}`)}async create(e){return this.request("/certificates",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/certificates/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/certificates/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new A(this.token)),this._actions}};var S=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/ssh_keys${r?`?${r}`:""}`)}async get(e){return this.request(`/ssh_keys/${e}`)}async create(e){return this.request("/ssh_keys",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/ssh_keys/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/ssh_keys/${e}`,{method:"DELETE"})}};var b=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/volumes/actions${r?`?${r}`:""}`)}async getGlobalAction(e){return this.request(`/volumes/actions/${e}`)}async listForVolume(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&(Array.isArray(a)?a.forEach(c=>r.append(n,c.toString())):r.append(n,a.toString()))});let t=r.toString();return this.request(`/volumes/${e}/actions${t?`?${t}`:""}`)}async getAction(e,s){return this.request(`/volumes/${e}/actions/${s}`)}async attach(e,s){return this.request(`/volumes/${e}/actions/attach`,{method:"POST",body:JSON.stringify(s)})}async detach(e){return this.request(`/volumes/${e}/actions/detach`,{method:"POST"})}async resize(e,s){return this.request(`/volumes/${e}/actions/resize`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/volumes/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}};var I=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/volumes${r?`?${r}`:""}`)}async get(e){return this.request(`/volumes/${e}`)}async create(e){return this.request("/volumes",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/volumes/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/volumes/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new b(this.token)),this._actions}};var E=class extends o{async getAllGlobal(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/load_balancers/actions${r?`?${r}`:""}`)}async getGlobalAction(e){return this.request(`/load_balancers/actions/${e}`)}async listForLoadBalancer(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&(Array.isArray(a)?a.forEach(c=>r.append(n,c.toString())):r.append(n,a.toString()))});let t=r.toString();return this.request(`/load_balancers/${e}/actions${t?`?${t}`:""}`)}async getAction(e,s){return this.request(`/load_balancers/${e}/actions/${s}`)}async addService(e,s){return this.request(`/load_balancers/${e}/actions/add_service`,{method:"POST",body:JSON.stringify(s)})}async updateService(e,s){return this.request(`/load_balancers/${e}/actions/update_service`,{method:"POST",body:JSON.stringify(s)})}async deleteService(e,s){return this.request(`/load_balancers/${e}/actions/delete_service`,{method:"POST",body:JSON.stringify(s)})}async addTarget(e,s){return this.request(`/load_balancers/${e}/actions/add_target`,{method:"POST",body:JSON.stringify(s)})}async removeTarget(e,s){return this.request(`/load_balancers/${e}/actions/remove_target`,{method:"POST",body:JSON.stringify(s)})}async attachToNetwork(e,s){return this.request(`/load_balancers/${e}/actions/attach_to_network`,{method:"POST",body:JSON.stringify(s)})}async detachFromNetwork(e,s){return this.request(`/load_balancers/${e}/actions/detach_from_network`,{method:"POST",body:JSON.stringify(s)})}async changeAlgorithm(e,s){return this.request(`/load_balancers/${e}/actions/change_algorithm`,{method:"POST",body:JSON.stringify(s)})}async changeDNSPTR(e,s){return this.request(`/load_balancers/${e}/actions/change_dns_ptr`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/load_balancers/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}async changeType(e,s){return this.request(`/load_balancers/${e}/actions/change_type`,{method:"POST",body:JSON.stringify(s)})}async enablePublicInterface(e){return this.request(`/load_balancers/${e}/actions/enable_public_interface`,{method:"POST"})}async disablePublicInterface(e){return this.request(`/load_balancers/${e}/actions/disable_public_interface`,{method:"POST"})}};var _=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/load_balancers${r?`?${r}`:""}`)}async create(e){return this.request("/load_balancers",{method:"POST",body:JSON.stringify(e)})}async get(e){return this.request(`/load_balancers/${e}`)}async update(e,s){return this.request(`/load_balancers/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/load_balancers/${e}`,{method:"DELETE"})}async getMetrics(e,s){let r=new URLSearchParams;return Object.entries(s).forEach(([t,n])=>{n!==void 0&&r.append(t,n.toString())}),this.request(`/load_balancers/${e}/metrics?${r.toString()}`)}async listTypes(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/load_balancer_types${r?`?${r}`:""}`)}async getType(e){return this.request(`/load_balancer_types/${e}`)}get actions(){return this._actions||(this._actions=new E(this.token)),this._actions}};var R=class extends o{async getAll(e){return this.request(`/actions?id=${e}`)}async get(e){return this.request(`/actions/${e}`)}};var w=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/images${s?`?${s}`:""}`)}async get(e){return this.request(`/images/${e}`)}async update(e,s){return this.request(`/images/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/images/${e}`,{method:"DELETE"})}};var q=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/primary_ips${s?`?${s}`:""}`)}async get(e){return this.request(`/primary_ips/${e}`)}async create(e){return this.request("/primary_ips",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/primary_ips/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/primary_ips/${e}`,{method:"DELETE"})}};var L=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/placement_groups${s?`?${s}`:""}`)}async get(e){return this.request(`/placement_groups/${e}`)}async create(e){return this.request("/placement_groups",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/placement_groups/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/placement_groups/${e}`,{method:"DELETE"})}};var B=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/isos${s?`?${s}`:""}`)}async get(e){return this.request(`/isos/${e}`)}};var $=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/server_types${s?`?${s}`:""}`)}async get(e){return this.request(`/server_types/${e}`)}};var O=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/servers/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/servers/actions/${e}`)}async getAllByServer(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/servers/${e}/actions${t?`?${t}`:""}`)}async addServerToPlacementGroup(e,s){return this.request(`/servers/${e}/actions/add_to_placement_group`,{method:"POST",body:JSON.stringify({placement_group:s})})}async attachIsoToServer(e,s){return this.request(`/servers/${e}/actions/attach_iso`,{method:"POST",body:JSON.stringify({iso:s})})}async attachServerToNetwork(e,s,r,t){return this.request(`/servers/${e}/actions/attach_to_network`,{method:"POST",body:JSON.stringify({network:s,ip:r,alias_ips:t})})}async changeAliasIpOfNetwork(e,s,r){return this.request(`/servers/${e}/actions/change_alias_ips`,{method:"POST",body:JSON.stringify({network:s,alias_ips:r})})}async changeReverseDnsEntryForServer(e,s,r){return this.request(`/servers/${e}/actions/change_reverse_dns`,{method:"POST",body:JSON.stringify({ip:s,dns_ptr:r})})}async changeServerProtection(e,s,r){return this.request(`/servers/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify({protect:s,rebuild:r})})}async changeServerType(e,s,r){return this.request(`/servers/${e}/actions/change_type`,{method:"POST",body:JSON.stringify({type:s,upgrade_disk:r})})}async createImageFromServer(e,s,r,t){return this.request(`/servers/${e}/actions/create_image`,{method:"POST",body:JSON.stringify({type:s,description:r,labels:t})})}async detachServerFromNetwork(e,s){return this.request(`/servers/${e}/actions/detach_from_network`,{method:"POST",body:JSON.stringify({network:s})})}async detachIsoFromServer(e){return this.request(`/servers/${e}/actions/detach_iso`,{method:"POST"})}async disableBackupsForServer(e){return this.request(`/servers/${e}/actions/disable_backups`,{method:"POST"})}async disableRescueModeForServer(e){return this.request(`/servers/${e}/actions/disable_rescue`,{method:"POST"})}async enableBackupsForServer(e){return this.request(`/servers/${e}/actions/enable_backups`,{method:"POST"})}async enableRescueModeForServer(e,s,r){return this.request(`/servers/${e}/actions/enable_rescue`,{method:"POST"})}async powerOff(e){return this.request(`/servers/${e}/actions/poweroff`,{method:"POST"})}async powerOn(e){return this.request(`/servers/${e}/actions/poweron`,{method:"POST"})}async softReboot(e){return this.request(`/servers/${e}/actions/reboot`,{method:"POST"})}async rebuildFromImage(e,s){return this.request(`/servers/${e}/actions/rebuild`,{method:"POST",body:JSON.stringify({image:s})})}async removeFromPlacementGroup(e){return this.request(`/servers/${e}/actions/remove_from_placement_group`,{method:"POST"})}async requestConsoleForServer(e){return this.request(`/servers/${e}/actions/request_console`,{method:"POST"})}async resetServer(e){return this.request(`/servers/${e}/actions/reset`,{method:"POST"})}async resetServerPassword(e){return this.request(`/servers/${e}/actions/reset_password`,{method:"POST"})}async shutdownServer(e){return this.request(`/servers/${e}/actions/shutdown`,{method:"POST"})}async getActionForServer(e,s){return this.request(`/servers/${e}/actions/${s}`)}};var T=class extends o{_primaryIP=null;_images=null;_placementGroups=null;_isos=null;_serverTypes=null;_actions=null;get primaryIP(){return this._primaryIP||(this._primaryIP=new q(this.token)),this._primaryIP}get images(){return this._images||(this._images=new w(this.token)),this._images}get placementGroups(){return this._placementGroups||(this._placementGroups=new L(this.token)),this._placementGroups}get isos(){return this._isos||(this._isos=new B(this.token)),this._isos}get serverTypes(){return this._serverTypes||(this._serverTypes=new $(this.token)),this._serverTypes}get actions(){return this._actions||(this._actions=new O(this.token)),this._actions}async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/servers${r?`?${r}`:""}`)}async get(e){return this.request(`/servers/${e}`)}async create(e){return this.request("/servers",{method:"POST",body:JSON.stringify(e)})}async delete(e){return this.request(`/servers/${e}`,{method:"DELETE"})}getMetrics(e,s,r,t,n){return this.request(`/servers/${e}/metrics?type=${s}&start=${r}&end=${t}&step=${n}`)}};var k=class extends o{get actions(){return new R(this.token)}get billing(){return new u(this.token)}get certificates(){return new h(this.token)}get datacenters(){return new f(this.token)}get firewalls(){return new m(this.token)}get floatingIps(){return new P(this.token)}get loadBalancers(){return new _(this.token)}get locations(){return new d(this.token)}get networks(){return new g(this.token)}get servers(){return new T(this.token)}get sshKeys(){return new S(this.token)}get volumes(){return new I(this.token)}};
 //# sourceMappingURL=index.js.map
@@ -27611,7 +27611,7 @@ async function request(token, method, path, body, params) {
         }
         if (attempt < MAX_RETRIES) {
             const delay = INITIAL_BACKOFF_MS * Math.pow(2, attempt);
-            core.warning(`Hetzner API ${resp.status} on ${method} ${path}, retrying in ${delay}ms…`);
+            lib_core.warning(`Hetzner API ${resp.status} on ${method} ${path}, retrying in ${delay}ms…`);
             await new Promise((r) => setTimeout(r, delay));
         }
         else {
@@ -27650,7 +27650,7 @@ function createClient(token) {
  * @returns         Key id, name and fingerprint.
  */
 async function ensureSshKey(client, name, publicKey) {
-    core.info(`Ensuring SSH key "${name}" exists in project…`);
+    lib_core.info(`Ensuring SSH key "${name}" exists in project…`);
     // 1. Lookup by name via the typed SDK
     const byName = await client.api.sshKeys.getAll({ name });
     if (!byName.success) {
@@ -27658,24 +27658,24 @@ async function ensureSshKey(client, name, publicKey) {
     }
     const nameMatch = byName.response.ssh_keys.find((k) => k.name === name);
     if (nameMatch) {
-        core.info(`SSH key "${name}" found (id=${nameMatch.id}).`);
+        lib_core.info(`SSH key "${name}" found (id=${nameMatch.id}).`);
         return pick(nameMatch);
     }
     // 2. Key not found by name — create it
-    core.info(`SSH key "${name}" not found — creating…`);
+    lib_core.info(`SSH key "${name}" not found — creating…`);
     const created = await client.api.sshKeys.create({
         name,
         public_key: publicKey,
     });
     if (created.success) {
         const key = created.response.ssh_key;
-        core.info(`SSH key "${name}" created (id=${key.id}).`);
+        lib_core.info(`SSH key "${name}" created (id=${key.id}).`);
         return pick(key);
     }
     // 3. Handle uniqueness_error: key body exists under a different name.
     const errCode = created.response.error.code;
     if (errCode === "uniqueness_error") {
-        core.info("Public key already registered under a different name — scanning by fingerprint…");
+        lib_core.info("Public key already registered under a different name — scanning by fingerprint…");
         const all = await client.api.sshKeys.getAll({ per_page: 50 });
         if (!all.success) {
             throw new Error(`Hetzner API error listing SSH keys: ${all.response.error.message}`);
@@ -27683,7 +27683,7 @@ async function ensureSshKey(client, name, publicKey) {
         const normalizedInput = normalizePublicKey(publicKey);
         const match = all.response.ssh_keys.find((k) => normalizePublicKey(k.public_key) === normalizedInput);
         if (match) {
-            core.info(`Found existing SSH key "${match.name}" (id=${match.id}) matching the provided public key.`);
+            lib_core.info(`Found existing SSH key "${match.name}" (id=${match.id}) matching the provided public key.`);
             return pick(match);
         }
     }
@@ -27724,7 +27724,7 @@ function extractIp(server, preferIpv6) {
     throw new Error(`Server ${server.id} has no public IP address`);
 }
 async function findOrCreateServer(client, opts) {
-    core.info(`Looking for server "${opts.name}" with label project=${opts.projectTag}…`);
+    lib_core.info(`Looking for server "${opts.name}" with label project=${opts.projectTag}…`);
     // Discover existing server by name + label
     const list = await client.get("/servers", {
         name: opts.name,
@@ -27736,18 +27736,18 @@ async function findOrCreateServer(client, opts) {
         const actuallyIpv6Only = !hasIpv4;
         const ip = extractIp(existing, opts.ipv6Only);
         if (opts.ipv6Only && hasIpv4) {
-            core.warning(`Server "${opts.name}" has a public IPv4 but ipv6_only=true was requested. ` +
+            lib_core.warning(`Server "${opts.name}" has a public IPv4 but ipv6_only=true was requested. ` +
                 `The existing server's network config will not be changed. Using IPv6 address.`);
         }
         else if (!opts.ipv6Only && !hasIpv4) {
-            core.warning(`Server "${opts.name}" is IPv6-only but ipv6_only=false was requested. ` +
+            lib_core.warning(`Server "${opts.name}" is IPv6-only but ipv6_only=false was requested. ` +
                 `Returning IPv6 address since no IPv4 is available.`);
         }
-        core.info(`Found existing server "${opts.name}" (id=${existing.id}, ip=${ip}, status=${existing.status}, ipv6_only=${actuallyIpv6Only})`);
+        lib_core.info(`Found existing server "${opts.name}" (id=${existing.id}, ip=${ip}, status=${existing.status}, ipv6_only=${actuallyIpv6Only})`);
         return { id: existing.id, ip, status: existing.status, ipv6Only: actuallyIpv6Only };
     }
     // Create server
-    core.info(`Server "${opts.name}" not found. Creating (ipv6_only=${opts.ipv6Only})…`);
+    lib_core.info(`Server "${opts.name}" not found. Creating (ipv6_only=${opts.ipv6Only})…`);
     const createResp = await client.post("/servers", {
         name: opts.name,
         server_type: opts.serverType,
@@ -27763,27 +27763,27 @@ async function findOrCreateServer(client, opts) {
         },
     });
     const server = createResp.server;
-    core.info(`Server created (id=${server.id}). Waiting for it to become running…`);
+    lib_core.info(`Server created (id=${server.id}). Waiting for it to become running…`);
     // Poll until the server reaches "running" status
     for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
         const check = await client.get(`/servers/${server.id}`);
         if (check.server.status === "running") {
             const ip = extractIp(check.server, opts.ipv6Only);
-            core.info(`Server "${opts.name}" is running (id=${check.server.id}, ip=${ip}, ipv6_only=${opts.ipv6Only})`);
+            lib_core.info(`Server "${opts.name}" is running (id=${check.server.id}, ip=${ip}, ipv6_only=${opts.ipv6Only})`);
             return { id: check.server.id, ip, status: check.server.status, ipv6Only: opts.ipv6Only };
         }
-        core.info(`Server status: ${check.server.status}. Polling again in ${POLL_INTERVAL_MS / 1000}s…`);
+        lib_core.info(`Server status: ${check.server.status}. Polling again in ${POLL_INTERVAL_MS / 1000}s…`);
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
     throw new Error(`Server "${opts.name}" did not reach "running" status within ${(MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS) / 1000}s`);
 }
 //# sourceMappingURL=findOrCreateServer.js.map
-// EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
-var exec = __nccwpck_require__(5236);
 ;// CONCATENATED MODULE: external "node:fs"
 const external_node_fs_namespaceObject = require("node:fs");
 ;// CONCATENATED MODULE: external "node:path"
 const external_node_path_namespaceObject = require("node:path");
+// EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
+var exec = __nccwpck_require__(5236);
 ;// CONCATENATED MODULE: external "node:os"
 const external_node_os_namespaceObject = require("node:os");
 ;// CONCATENATED MODULE: ./lib/deploy/ssh.js
@@ -27906,110 +27906,6 @@ function shellQuote(s) {
     return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 //# sourceMappingURL=ssh.js.map
-;// CONCATENATED MODULE: ./lib/deploy/rsync.js
-
-
-
-/* ------------------------------------------------------------------ */
-/*  Input validation                                                  */
-/* ------------------------------------------------------------------ */
-/** Allowed characters in an absolute target directory path. */
-const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/\-]+$/;
-/** Allowed characters in an SSH user name. */
-const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.\-]*$/;
-/**
- * Deploy a local directory to a remote server using rsync over SSH.
- *
- * - Writes `sshKey` to a temporary file with mode 0600 and removes it
- *   after the transfer (even on failure).
- * - Uses `rsync -avz --delete` to mirror the source into the target.
- * - SSH is configured with `StrictHostKeyChecking=accept-new` so the
- *   first connection auto-accepts the host key without prompting.
- */
-async function rsyncDeploy(opts) {
-    const { host, user, sourceDir, targetDir, sshKey, ipv6Only = false, port = 22, } = opts;
-    // Validate inputs before writing any key material to disk.
-    if (!SAFE_USER_RE.test(user)) {
-        throw new Error(`rsync: invalid SSH user: ${JSON.stringify(user)}`);
-    }
-    if (!SAFE_PATH_RE.test(targetDir)) {
-        throw new Error(`rsync: invalid target directory: ${JSON.stringify(targetDir)}`);
-    }
-    // Normalise source path: ensure trailing slash so rsync copies *contents*.
-    const normalisedSource = sourceDir.endsWith("/")
-        ? sourceDir
-        : `${sourceDir}/`;
-    // Write private key to a temp file with strict permissions.
-    const keyFile = writeKeyFile(sshKey);
-    try {
-        core.info("SSH private key written to temporary file.");
-        // Build the SSH command used by rsync.
-        const sshParts = [
-            "ssh",
-            ...SSH_OPTIONS,
-            "-i",
-            keyFile,
-            "-p",
-            String(port),
-        ];
-        if (ipv6Only) {
-            sshParts.push("-6");
-        }
-        const sshCmd = sshParts.join(" ");
-        // Format remote destination — bracket IPv6 addresses regardless of
-        // ipv6Only flag (the server may be IPv6-only even when the flag is false,
-        // e.g. reusing an existing server that has no IPv4).
-        const remoteHost = formatSshHost(host);
-        const destination = `${user}@${remoteHost}:${targetDir}`;
-        // Assemble rsync arguments.
-        const rsyncArgs = [
-            "-avz",
-            "--delete",
-            "--protect-args",
-            "-e",
-            sshCmd,
-            normalisedSource,
-            destination,
-        ];
-        core.info(`rsync ${rsyncArgs.join(" ")}`);
-        let exitCode;
-        try {
-            exitCode = await exec.exec("rsync", rsyncArgs, {
-                silent: false,
-            });
-        }
-        catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (ipv6Only) {
-                throw new Error(`rsync failed (IPv6-only mode): ${msg}. ` +
-                    "The runner may lack IPv6 connectivity. " +
-                    "Use a self-hosted runner with IPv6 or set ipv6_only: false to provision a dual-stack server.");
-            }
-            throw err;
-        }
-        if (exitCode !== 0) {
-            const base = `rsync exited with code ${exitCode}`;
-            if (ipv6Only) {
-                throw new Error(`${base} (IPv6-only mode). ` +
-                    "The runner may lack IPv6 connectivity. " +
-                    "Use a self-hosted runner with IPv6 or set ipv6_only: false to provision a dual-stack server.");
-            }
-            throw new Error(base);
-        }
-        core.info("rsync transfer completed successfully.");
-    }
-    finally {
-        // Clean up the temporary key file unconditionally.
-        try {
-            cleanupKeyFile(keyFile);
-            core.info("Temporary SSH key file removed.");
-        }
-        catch {
-            core.warning("Failed to remove temporary SSH key file.");
-        }
-    }
-}
-//# sourceMappingURL=rsync.js.map
 ;// CONCATENATED MODULE: ./lib/deploy/remoteSetup.js
 
 
@@ -28060,7 +27956,7 @@ function renderUnit(vars) {
  */
 async function ensureTargetDir(opts) {
     const { host, user, privateKey, targetDir, ipv6Only = false } = opts;
-    core.info(`Creating target directory ${targetDir} on ${host}…`);
+    lib_core.info(`Creating target directory ${targetDir} on ${host}…`);
     await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, `sudo mkdir -p ${shellQuote(targetDir)}`, ipv6Only));
 }
 /**
@@ -28080,7 +27976,7 @@ async function ensureTargetDir(opts) {
 async function installSystemdUnit(opts) {
     const { host, user, privateKey, targetDir, serviceName, execStart, ipv6Only = false } = opts;
     const result = { unitInstalled: false, serviceRestarted: false };
-    core.info(`Installing systemd unit for "${serviceName}"…`);
+    lib_core.info(`Installing systemd unit for "${serviceName}"…`);
     const unitContent = renderUnit({
         SERVICE_NAME: serviceName,
         WORKING_DIR: targetDir,
@@ -28092,15 +27988,15 @@ async function installSystemdUnit(opts) {
         // Upload the unit file via heredoc (avoids scp dependency on remote)
         await sshExec(keyPath, user, host, `sudo tee ${shellQuote(unitPath)} > /dev/null << 'UNIT_EOF'\n${unitContent}\nUNIT_EOF`, ipv6Only);
         result.unitInstalled = true;
-        core.info(`Unit file written to ${unitPath}.`);
+        lib_core.info(`Unit file written to ${unitPath}.`);
         // Reload systemd daemon
-        core.info("Running systemctl daemon-reload…");
+        lib_core.info("Running systemctl daemon-reload…");
         await sshExec(keyPath, user, host, "sudo systemctl daemon-reload", ipv6Only);
         // Enable and restart the service
-        core.info(`Enabling and restarting ${serviceName}…`);
+        lib_core.info(`Enabling and restarting ${serviceName}…`);
         await sshExec(keyPath, user, host, `sudo systemctl enable ${shellQuote(serviceName)} && sudo systemctl restart ${shellQuote(serviceName)}`, ipv6Only);
         result.serviceRestarted = true;
-        core.info(`Service "${serviceName}" restarted successfully.`);
+        lib_core.info(`Service "${serviceName}" restarted successfully.`);
     });
     return result;
 }
@@ -28206,7 +28102,7 @@ async function installPackages(opts) {
     validatePackageNames(packages);
     await withKeyFile(privateKey, async (keyPath) => {
         // Stage 1: Wait for cloud-init readiness
-        core.info(`[${STAGE_CLOUD_INIT}] Waiting for cloud-init to complete…`);
+        lib_core.info(`[${STAGE_CLOUD_INIT}] Waiting for cloud-init to complete…`);
         try {
             await sshExec(keyPath, user, host, "cloud-init status --wait", ipv6Only);
         }
@@ -28214,10 +28110,10 @@ async function installPackages(opts) {
             const msg = err instanceof Error ? err.message : String(err);
             throw new Error(`${STAGE_CLOUD_INIT}: ${msg}`);
         }
-        core.info(`[${STAGE_CLOUD_INIT}] Cloud-init ready.`);
+        lib_core.info(`[${STAGE_CLOUD_INIT}] Cloud-init ready.`);
         // Stage 2: Install packages
         const pkgList = packages.map((p) => shellQuote(p)).join(" ");
-        core.info(`[${STAGE_INSTALL}] Installing packages: ${pkgList}…`);
+        lib_core.info(`[${STAGE_INSTALL}] Installing packages: ${pkgList}…`);
         try {
             await sshExec(keyPath, user, host, `sudo apt-get update -qq && sudo apt-get install -y -qq ${pkgList}`, ipv6Only);
         }
@@ -28225,9 +28121,9 @@ async function installPackages(opts) {
             const msg = err instanceof Error ? err.message : String(err);
             throw new Error(`${STAGE_INSTALL}: ${msg}`);
         }
-        core.info(`[${STAGE_INSTALL}] Packages installed successfully.`);
+        lib_core.info(`[${STAGE_INSTALL}] Packages installed successfully.`);
         // Stage 3: Verify installed packages
-        core.info(`[${STAGE_VERIFY}] Verifying installed packages…`);
+        lib_core.info(`[${STAGE_VERIFY}] Verifying installed packages…`);
         try {
             for (const pkg of packages) {
                 await sshExec(keyPath, user, host, `dpkg -s ${shellQuote(pkg)}`, ipv6Only);
@@ -28237,10 +28133,298 @@ async function installPackages(opts) {
             const msg = err instanceof Error ? err.message : String(err);
             throw new Error(`${STAGE_VERIFY}: ${msg}`);
         }
-        core.info(`[${STAGE_VERIFY}] All packages verified.`);
+        lib_core.info(`[${STAGE_VERIFY}] All packages verified.`);
     });
 }
 //# sourceMappingURL=packageInstall.js.map
+;// CONCATENATED MODULE: ./lib/deploy/rsync.js
+
+
+
+/* ------------------------------------------------------------------ */
+/*  Input validation                                                  */
+/* ------------------------------------------------------------------ */
+/** Allowed characters in an absolute target directory path. */
+const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/\-]+$/;
+/** Allowed characters in an SSH user name. */
+const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.\-]*$/;
+/**
+ * Deploy a local directory to a remote server using rsync over SSH.
+ *
+ * - Writes `sshKey` to a temporary file with mode 0600 and removes it
+ *   after the transfer (even on failure).
+ * - Uses `rsync -avz --delete` to mirror the source into the target.
+ * - SSH is configured with `StrictHostKeyChecking=accept-new` so the
+ *   first connection auto-accepts the host key without prompting.
+ */
+async function rsyncDeploy(opts) {
+    const { host, user, sourceDir, targetDir, sshKey, ipv6Only = false, port = 22, } = opts;
+    // Validate inputs before writing any key material to disk.
+    if (!SAFE_USER_RE.test(user)) {
+        throw new Error(`rsync: invalid SSH user: ${JSON.stringify(user)}`);
+    }
+    if (!SAFE_PATH_RE.test(targetDir)) {
+        throw new Error(`rsync: invalid target directory: ${JSON.stringify(targetDir)}`);
+    }
+    // Normalise source path: ensure trailing slash so rsync copies *contents*.
+    const normalisedSource = sourceDir.endsWith("/")
+        ? sourceDir
+        : `${sourceDir}/`;
+    // Write private key to a temp file with strict permissions.
+    const keyFile = writeKeyFile(sshKey);
+    try {
+        lib_core.info("SSH private key written to temporary file.");
+        // Build the SSH command used by rsync.
+        const sshParts = [
+            "ssh",
+            ...SSH_OPTIONS,
+            "-i",
+            keyFile,
+            "-p",
+            String(port),
+        ];
+        if (ipv6Only) {
+            sshParts.push("-6");
+        }
+        const sshCmd = sshParts.join(" ");
+        // Format remote destination — bracket IPv6 addresses regardless of
+        // ipv6Only flag (the server may be IPv6-only even when the flag is false,
+        // e.g. reusing an existing server that has no IPv4).
+        const remoteHost = formatSshHost(host);
+        const destination = `${user}@${remoteHost}:${targetDir}`;
+        // Assemble rsync arguments.
+        const rsyncArgs = [
+            "-avz",
+            "--delete",
+            "--protect-args",
+            "-e",
+            sshCmd,
+            normalisedSource,
+            destination,
+        ];
+        lib_core.info(`rsync ${rsyncArgs.join(" ")}`);
+        let exitCode;
+        try {
+            exitCode = await exec.exec("rsync", rsyncArgs, {
+                silent: false,
+            });
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (ipv6Only) {
+                throw new Error(`rsync failed (IPv6-only mode): ${msg}. ` +
+                    "The runner may lack IPv6 connectivity. " +
+                    "Use a self-hosted runner with IPv6 or set ipv6_only: false to provision a dual-stack server.");
+            }
+            throw err;
+        }
+        if (exitCode !== 0) {
+            const base = `rsync exited with code ${exitCode}`;
+            if (ipv6Only) {
+                throw new Error(`${base} (IPv6-only mode). ` +
+                    "The runner may lack IPv6 connectivity. " +
+                    "Use a self-hosted runner with IPv6 or set ipv6_only: false to provision a dual-stack server.");
+            }
+            throw new Error(base);
+        }
+        lib_core.info("rsync transfer completed successfully.");
+    }
+    finally {
+        // Clean up the temporary key file unconditionally.
+        try {
+            cleanupKeyFile(keyFile);
+            lib_core.info("Temporary SSH key file removed.");
+        }
+        catch {
+            lib_core.warning("Failed to remove temporary SSH key file.");
+        }
+    }
+}
+//# sourceMappingURL=rsync.js.map
+;// CONCATENATED MODULE: ./lib/pipeline.js
+
+
+
+
+
+
+
+/* ------------------------------------------------------------------ */
+/*  Stage labels (ordered)                                            */
+/* ------------------------------------------------------------------ */
+/** Labeled constants for each pipeline stage, in execution order. */
+const STAGES = {
+    installPackages: "installPackages",
+    ensureTargetDir: "ensureTargetDir",
+    rsyncDeploy: "rsyncDeploy",
+    podman: "podman",
+    systemd: "systemd",
+    haproxy: "haproxy",
+    firewall: "firewall",
+};
+/** Ordered list of all stage labels for deterministic iteration. */
+const STAGE_ORDER = [
+    STAGES.installPackages,
+    STAGES.ensureTargetDir,
+    STAGES.rsyncDeploy,
+    STAGES.podman,
+    STAGES.systemd,
+    STAGES.haproxy,
+    STAGES.firewall,
+];
+/* ------------------------------------------------------------------ */
+/*  Error helper                                                      */
+/* ------------------------------------------------------------------ */
+/** Wrap a stage failure with the DEPLOY_PIPELINE_ prefix. */
+function pipelineError(stage, cause) {
+    const msg = cause instanceof Error ? cause.message : String(cause);
+    return new Error(`DEPLOY_PIPELINE_${stage}: ${msg}`);
+}
+/* ------------------------------------------------------------------ */
+/*  Stage predicates                                                  */
+/* ------------------------------------------------------------------ */
+/** Determine which stages are active for the given inputs. */
+function activeStages(inputs) {
+    return STAGE_ORDER.filter((stage) => {
+        switch (stage) {
+            case STAGES.installPackages:
+            case STAGES.ensureTargetDir:
+            case STAGES.rsyncDeploy:
+                return true;
+            case STAGES.podman:
+                return Boolean(inputs.containerImage);
+            case STAGES.systemd:
+                return Boolean(inputs.serviceName) && !inputs.containerImage;
+            case STAGES.haproxy:
+                return Boolean(inputs.haproxyCfg);
+            case STAGES.firewall:
+                return Boolean(inputs.firewallEnabled);
+        }
+    });
+}
+/* ------------------------------------------------------------------ */
+/*  Pipeline                                                          */
+/* ------------------------------------------------------------------ */
+/**
+ * Orchestrate the full provisioning + deployment pipeline.
+ *
+ * 1. Provision Hetzner resources (SSH key, server).
+ * 2. Execute ordered deploy stages, skipping those whose inputs are absent.
+ *
+ * Stage failures are wrapped with a `DEPLOY_PIPELINE_<stage>:` prefix so
+ * callers can identify which step failed.
+ */
+async function deployPipeline(inputs) {
+    /* ---- Hetzner resource provisioning ---- */
+    lib_core.info("--- Hetzner resource provisioning ---");
+    const client = createClient(inputs.hcloudToken);
+    lib_core.info("Provisioning: Ensuring SSH key is registered…");
+    const sshKey = await ensureSshKey(client, `${inputs.projectTag}-deploy`, inputs.publicKey);
+    lib_core.info("Provisioning: Finding or creating server…");
+    const server = await findOrCreateServer(client, {
+        name: inputs.serverName,
+        projectTag: inputs.projectTag,
+        image: inputs.image,
+        serverType: inputs.serverType,
+        ipv6Only: inputs.ipv6Only,
+        sshKeyIds: [sshKey.id],
+    });
+    lib_core.setOutput("server_ip", server.ip);
+    lib_core.setOutput("server_id", String(server.id));
+    lib_core.setOutput("server_status", server.status);
+    lib_core.info("--- Hetzner provisioning complete ---");
+    lib_core.info(`  server_id:     ${server.id}`);
+    lib_core.info(`  server_ip:     ${server.ip}`);
+    lib_core.info(`  server_status: ${server.status}`);
+    /* ---- Deployment stages ---- */
+    lib_core.info("--- Deployment ---");
+    if (inputs.ipv6Only) {
+        lib_core.warning("ipv6_only is enabled — the runner must have IPv6 connectivity " +
+            `to reach the server at ${server.ip}. If deploy fails, verify that ` +
+            "your GitHub Actions runner supports outbound IPv6.");
+    }
+    const stages = activeStages(inputs);
+    const total = stages.length;
+    let setupResult = { unitInstalled: false, serviceRestarted: false };
+    for (let i = 0; i < stages.length; i++) {
+        const stage = stages[i];
+        const stepLabel = `Step ${i + 1}/${total}`;
+        lib_core.info(`${stepLabel}: [${stage}]`);
+        try {
+            switch (stage) {
+                case STAGES.installPackages:
+                    await installPackages({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        privateKey: inputs.sshPrivateKey,
+                        ipv6Only: inputs.ipv6Only,
+                    });
+                    break;
+                case STAGES.ensureTargetDir:
+                    await ensureTargetDir({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        privateKey: inputs.sshPrivateKey,
+                        targetDir: inputs.targetDir,
+                        ipv6Only: inputs.ipv6Only,
+                    });
+                    break;
+                case STAGES.rsyncDeploy:
+                    await rsyncDeploy({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        sourceDir: inputs.sourceDir,
+                        targetDir: inputs.targetDir,
+                        sshKey: inputs.sshPrivateKey,
+                        ipv6Only: inputs.ipv6Only,
+                    });
+                    break;
+                case STAGES.podman:
+                    // Future: container deployment via podman
+                    lib_core.info(`[${stage}] Podman container deployment not yet implemented.`);
+                    break;
+                case STAGES.systemd:
+                    setupResult = await installSystemdUnit({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        privateKey: inputs.sshPrivateKey,
+                        targetDir: inputs.targetDir,
+                        serviceName: inputs.serviceName,
+                        ipv6Only: inputs.ipv6Only,
+                    });
+                    lib_core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
+                    break;
+                case STAGES.haproxy:
+                    // Future: HAProxy configuration
+                    lib_core.info(`[${stage}] HAProxy configuration not yet implemented.`);
+                    break;
+                case STAGES.firewall:
+                    // Future: Firewall rules
+                    lib_core.info(`[${stage}] Firewall configuration not yet implemented.`);
+                    break;
+            }
+        }
+        catch (err) {
+            if (inputs.ipv6Only) {
+                const msg = err instanceof Error ? err.message : String(err);
+                throw new Error(`DEPLOY_PIPELINE_${stage}: Deploy to IPv6-only server failed: ${msg}\n` +
+                    "Hint: The server was provisioned with ipv6_only=true. Ensure " +
+                    "the GitHub Actions runner has outbound IPv6 connectivity. " +
+                    "Standard GitHub-hosted runners do NOT support IPv6.");
+            }
+            throw pipelineError(stage, err);
+        }
+        lib_core.info(`${stepLabel}: [${stage}] done`);
+    }
+    /* ---- Summary ---- */
+    lib_core.info("--- Deployment complete ---");
+    lib_core.info(`  stages executed: ${stages.join(", ")}`);
+    lib_core.info(`  rsync:             done`);
+    lib_core.info(`  systemd unit:      ${setupResult.unitInstalled ? "installed" : "skipped"}`);
+    lib_core.info(`  service restarted: ${setupResult.serviceRestarted ? "yes" : "no"}`);
+    lib_core.info("Pipeline completed.");
+}
+//# sourceMappingURL=pipeline.js.map
 ;// CONCATENATED MODULE: ./lib/validate.js
 
 /** Allowlist patterns — each must match the entire value. */
@@ -28300,6 +28484,27 @@ const rules = [
         pattern: /^(true|false)$/,
         hint: 'Must be exactly "true" or "false".',
     },
+    {
+        field: "containerImage",
+        label: "container_image",
+        pattern: /^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$/,
+        hint: "Must be a valid container image reference (e.g. nginx:latest, ghcr.io/org/app:v1).",
+        optional: true,
+    },
+    {
+        field: "haproxyCfg",
+        label: "haproxy_cfg",
+        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+        hint: 'Must be a relative or absolute path without ".." or special characters.',
+        optional: true,
+    },
+    {
+        field: "firewallEnabled",
+        label: "firewall_enabled",
+        pattern: /^(true|false)$/,
+        hint: 'Must be exactly "true" or "false".',
+        optional: true,
+    },
 ];
 /**
  * Validate user-supplied inputs against strict allowlists.
@@ -28319,164 +28524,85 @@ function validateInputs(inputs) {
             throw new Error(`INPUT_VALIDATION_ Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`);
         }
     }
-    core.info("Input validation passed.");
+    lib_core.info("Input validation passed.");
 }
 //# sourceMappingURL=validate.js.map
 ;// CONCATENATED MODULE: ./lib/index.js
 
 
 
-
-
-
-
-
 function parseInputs() {
     // Collect raw string values — defaults come from action.yml exclusively.
     const raw = {
-        serverName: core.getInput("server_name", { required: true }),
-        sshUser: core.getInput("ssh_user"),
-        sourceDir: core.getInput("source_dir"),
-        targetDir: core.getInput("target_dir"),
-        serviceName: core.getInput("service_name"),
-        image: core.getInput("image"),
-        serverType: core.getInput("server_type"),
-        projectTag: core.getInput("project_tag", { required: true }),
-        ipv6Only: core.getInput("ipv6_only"),
+        serverName: lib_core.getInput("server_name", { required: true }),
+        sshUser: lib_core.getInput("ssh_user"),
+        sourceDir: lib_core.getInput("source_dir"),
+        targetDir: lib_core.getInput("target_dir"),
+        serviceName: lib_core.getInput("service_name"),
+        image: lib_core.getInput("image"),
+        serverType: lib_core.getInput("server_type"),
+        projectTag: lib_core.getInput("project_tag", { required: true }),
+        ipv6Only: lib_core.getInput("ipv6_only"),
+        containerImage: lib_core.getInput("container_image"),
+        haproxyCfg: lib_core.getInput("haproxy_cfg"),
+        firewallEnabled: lib_core.getInput("firewall_enabled"),
     };
     // Validate all non-secret inputs before any cloud API call.
     validateInputs(raw);
     return {
-        hcloudToken: core.getInput("hcloud_token", { required: true }),
+        hcloudToken: lib_core.getInput("hcloud_token", { required: true }),
         serverName: raw.serverName,
         projectTag: raw.projectTag,
         image: raw.image,
         serverType: raw.serverType,
         ipv6Only: raw.ipv6Only === "true",
-        publicKey: core.getInput("public_key", { required: true }),
-        sshPrivateKey: core.getInput("ssh_private_key", { required: true }),
+        publicKey: lib_core.getInput("public_key", { required: true }),
+        sshPrivateKey: lib_core.getInput("ssh_private_key", { required: true }),
         sshUser: raw.sshUser,
         serviceName: raw.serviceName,
         sourceDir: raw.sourceDir,
         targetDir: raw.targetDir,
+        containerImage: raw.containerImage || undefined,
+        haproxyCfg: raw.haproxyCfg || undefined,
+        firewallEnabled: raw.firewallEnabled === "true",
     };
 }
 function maskSecrets(inputs) {
-    core.setSecret(inputs.hcloudToken);
+    lib_core.setSecret(inputs.hcloudToken);
     if (inputs.sshPrivateKey) {
-        core.setSecret(inputs.sshPrivateKey);
+        lib_core.setSecret(inputs.sshPrivateKey);
     }
     if (inputs.publicKey) {
-        core.setSecret(inputs.publicKey);
+        lib_core.setSecret(inputs.publicKey);
     }
 }
 function logInputs(inputs) {
-    core.info("Resolved inputs:");
-    core.info(`  server_name:  ${inputs.serverName}`);
-    core.info(`  project_tag:  ${inputs.projectTag}`);
-    core.info(`  image:        ${inputs.image}`);
-    core.info(`  server_type:  ${inputs.serverType}`);
-    core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
-    core.info(`  ssh_user:     ${inputs.sshUser}`);
-    core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);
-    core.info(`  source_dir:   ${inputs.sourceDir}`);
-    core.info(`  target_dir:   ${inputs.targetDir}`);
-    core.info(`  public_key:   ${inputs.publicKey ? "(provided)" : "(not set)"}`);
-    core.info(`  ssh_private_key: ${inputs.sshPrivateKey ? "(provided)" : "(not set)"}`);
+    lib_core.info("Resolved inputs:");
+    lib_core.info(`  server_name:  ${inputs.serverName}`);
+    lib_core.info(`  project_tag:  ${inputs.projectTag}`);
+    lib_core.info(`  image:        ${inputs.image}`);
+    lib_core.info(`  server_type:  ${inputs.serverType}`);
+    lib_core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
+    lib_core.info(`  ssh_user:     ${inputs.sshUser}`);
+    lib_core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);
+    lib_core.info(`  source_dir:   ${inputs.sourceDir}`);
+    lib_core.info(`  target_dir:   ${inputs.targetDir}`);
+    lib_core.info(`  public_key:   ${inputs.publicKey ? "(provided)" : "(not set)"}`);
+    lib_core.info(`  ssh_private_key: ${inputs.sshPrivateKey ? "(provided)" : "(not set)"}`);
+    lib_core.info(`  container_image: ${inputs.containerImage ?? "(not set)"}`);
+    lib_core.info(`  haproxy_cfg:     ${inputs.haproxyCfg ?? "(not set)"}`);
+    lib_core.info(`  firewall_enabled: ${String(inputs.firewallEnabled)}`);
 }
 async function run() {
     const inputs = parseInputs();
     maskSecrets(inputs);
     logInputs(inputs);
-    // WP2: Hetzner resource provisioning
-    core.info("--- Hetzner resource provisioning ---");
-    const client = createClient(inputs.hcloudToken);
-    core.info("Step 1/2: Ensuring SSH key is registered…");
-    const sshKey = await ensureSshKey(client, `${inputs.projectTag}-deploy`, inputs.publicKey);
-    core.info("Step 2/2: Finding or creating server…");
-    const server = await findOrCreateServer(client, {
-        name: inputs.serverName,
-        projectTag: inputs.projectTag,
-        image: inputs.image,
-        serverType: inputs.serverType,
-        ipv6Only: inputs.ipv6Only,
-        sshKeyIds: [sshKey.id],
-    });
-    core.setOutput("server_ip", server.ip);
-    core.setOutput("server_id", String(server.id));
-    core.setOutput("server_status", server.status);
-    core.info("--- Hetzner provisioning complete ---");
-    core.info(`  server_id:     ${server.id}`);
-    core.info(`  server_ip:     ${server.ip}`);
-    core.info(`  server_status: ${server.status}`);
-    // WP3 + WP4: Deploy — ensure target dir, rsync files, then install systemd unit
-    core.info("--- Deployment ---");
-    if (inputs.ipv6Only) {
-        core.warning("ipv6_only is enabled — the runner must have IPv6 connectivity " +
-            `to reach the server at ${server.ip}. If deploy fails, verify that ` +
-            "your GitHub Actions runner supports outbound IPv6.");
-    }
-    let setupResult = { unitInstalled: false, serviceRestarted: false };
-    try {
-        core.info("Step 1/4: Ensuring target directory on remote host…");
-        await remoteSetup({
-            host: server.ip,
-            user: inputs.sshUser,
-            privateKey: inputs.sshPrivateKey,
-            targetDir: inputs.targetDir,
-            ipv6Only: inputs.ipv6Only,
-        });
-        core.info("Step 2/4: Installing required packages…");
-        await installPackages({
-            host: server.ip,
-            user: inputs.sshUser,
-            privateKey: inputs.sshPrivateKey,
-            ipv6Only: inputs.ipv6Only,
-        });
-        core.info("Step 3/4: Syncing files via rsync…");
-        await rsyncDeploy({
-            host: server.ip,
-            user: inputs.sshUser,
-            sourceDir: inputs.sourceDir,
-            targetDir: inputs.targetDir,
-            sshKey: inputs.sshPrivateKey,
-            ipv6Only: inputs.ipv6Only,
-        });
-        if (inputs.serviceName) {
-            core.info("Step 4/4: Installing and restarting systemd unit…");
-            setupResult = await remoteSetup({
-                host: server.ip,
-                user: inputs.sshUser,
-                privateKey: inputs.sshPrivateKey,
-                targetDir: inputs.targetDir,
-                serviceName: inputs.serviceName,
-                ipv6Only: inputs.ipv6Only,
-            });
-            core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
-        }
-        else {
-            core.info("Step 4/4: No service_name provided — skipping systemd unit.");
-        }
-    }
-    catch (deployErr) {
-        const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
-        if (inputs.ipv6Only) {
-            throw new Error(`Deploy to IPv6-only server failed: ${msg}\n` +
-                "Hint: The server was provisioned with ipv6_only=true. Ensure " +
-                "the GitHub Actions runner has outbound IPv6 connectivity. " +
-                "Standard GitHub-hosted runners do NOT support IPv6.");
-        }
-        throw deployErr;
-    }
-    core.info("--- Deployment complete ---");
-    core.info(`  rsync:             done`);
-    core.info(`  systemd unit:      ${setupResult.unitInstalled ? "installed" : "skipped"}`);
-    core.info(`  service restarted: ${setupResult.serviceRestarted ? "yes" : "no"}`);
-    core.info("Action completed.");
+    await deployPipeline(inputs);
+    lib_core.info("Action completed.");
 }
 run().catch((err) => {
     const message = err instanceof Error ? err.message : String(err);
-    core.setFailed(message);
+    lib_core.setFailed(message);
 });
 //# sourceMappingURL=index.js.map
 })();

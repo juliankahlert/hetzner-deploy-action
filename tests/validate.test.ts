@@ -18,6 +18,9 @@ const validInputs: ValidatableInputs = {
   serverType: "cx23",
   projectTag: "myproject",
   ipv6Only: "false",
+  containerImage: "",
+  haproxyCfg: "",
+  firewallEnabled: "",
 };
 
 // ---------------------------------------------------------------------------

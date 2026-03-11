@@ -53,6 +53,19 @@ inputs:
     description: 'Target directory on the VPS where files will be placed'
     required: false
     default: '/opt/app'
+  # Pattern: ^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$ (optional)
+  container_image:
+    description: 'Container image reference — enables the podman stage when set'
+    required: false
+  # Pattern: relative or absolute path without ".." sequences (optional)
+  haproxy_cfg:
+    description: 'Path to HAProxy config — enables the haproxy stage when set'
+    required: false
+  # Pattern: ^(true|false)$ (optional)
+  firewall_enabled:
+    description: 'If true, enable the firewall stage'
+    required: false
+    default: 'false'
 outputs:
   server_ip:
     description: 'Public IP address of the server (IPv4 by default; IPv6 when ipv6_only is true)'

@@ -10,6 +10,9 @@ export interface ValidatableInputs {
   serverType: string;
   projectTag: string;
   ipv6Only: string;
+  containerImage: string;
+  haproxyCfg: string;
+  firewallEnabled: string;
 }
 
 /** Allowlist patterns — each must match the entire value. */
@@ -74,6 +77,27 @@ const rules: {
     label: "ipv6_only",
     pattern: /^(true|false)$/,
     hint: 'Must be exactly "true" or "false".',
+  },
+  {
+    field: "containerImage",
+    label: "container_image",
+    pattern: /^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$/,
+    hint: "Must be a valid container image reference (e.g. nginx:latest, ghcr.io/org/app:v1).",
+    optional: true,
+  },
+  {
+    field: "haproxyCfg",
+    label: "haproxy_cfg",
+    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+    hint: 'Must be a relative or absolute path without ".." or special characters.',
+    optional: true,
+  },
+  {
+    field: "firewallEnabled",
+    label: "firewall_enabled",
+    pattern: /^(true|false)$/,
+    hint: 'Must be exactly "true" or "false".',
+    optional: true,
   },
 ];
 
