@@ -11,6 +11,7 @@ export interface ValidatableInputs {
   projectTag: string;
   ipv6Only: string;
   containerImage: string;
+  containerPort: string;
   haproxyCfg: string;
   firewallEnabled: string;
 }
@@ -83,6 +84,13 @@ const rules: {
     label: "container_image",
     pattern: /^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$/,
     hint: "Must be a valid container image reference (e.g. nginx:latest, ghcr.io/org/app:v1).",
+    optional: true,
+  },
+  {
+    field: "containerPort",
+    label: "container_port",
+    pattern: /^\d{1,5}(:\d{1,5})?$/,
+    hint: 'Must be a port like "8080" or a port mapping like "8080:80".',
     optional: true,
   },
   {

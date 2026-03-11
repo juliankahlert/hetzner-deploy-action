@@ -5,6 +5,7 @@ import { findOrCreateServer } from "./hetzner/findOrCreateServer.js";
 import { ensureTargetDir, installSystemdUnit } from "./deploy/remoteSetup.js";
 import { installPackages } from "./deploy/packageInstall.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
+import { deployPodman } from "./deploy/podman.js";
 
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
@@ -54,6 +55,8 @@ export interface ActionInputs {
   targetDir: string;
   /** Container image reference — enables the podman stage when set. */
   containerImage?: string;
+  /** Container port or mapping passed to Podman Quadlet. */
+  containerPort?: string;
   /** HAProxy config path — enables the haproxy stage when set. */
   haproxyCfg?: string;
   /** Enables the firewall stage when true. */
@@ -153,6 +156,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
   const stages = activeStages(inputs);
   const total = stages.length;
   let setupResult = { unitInstalled: false, serviceRestarted: false };
+  let podmanResult = { quadletUploaded: false, serviceRestarted: false };
 
   for (let i = 0; i < stages.length; i++) {
     const stage = stages[i];
@@ -193,8 +197,21 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           break;
 
         case STAGES.podman:
-          // Future: container deployment via podman
-          core.info(`[${stage}] Podman container deployment not yet implemented.`);
+          if (!inputs.containerImage) {
+            throw new Error("container_image is required for podman deployment");
+          }
+          podmanResult = await deployPodman({
+            host: server.ip,
+            user: inputs.sshUser,
+            privateKey: inputs.sshPrivateKey,
+            image: inputs.containerImage,
+            port: inputs.containerPort ?? "8080",
+            serviceName: inputs.serviceName || "app",
+            ipv6Only: inputs.ipv6Only,
+          });
+          core.info(
+            `Podman service "${inputs.serviceName || "app"}" deployed and restarted.`,
+          );
           break;
 
         case STAGES.systemd:
@@ -239,6 +256,14 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
   core.info("--- Deployment complete ---");
   core.info(`  stages executed: ${stages.join(", ")}`);
   core.info(`  rsync:             done`);
+  if (stages.includes(STAGES.podman)) {
+    core.info(
+      `  podman quadlet:    ${podmanResult.quadletUploaded ? "uploaded" : "skipped"}`,
+    );
+    core.info(
+      `  podman restarted:  ${podmanResult.serviceRestarted ? "yes" : "no"}`,
+    );
+  }
   core.info(
     `  systemd unit:      ${setupResult.unitInstalled ? "installed" : "skipped"}`,
   );

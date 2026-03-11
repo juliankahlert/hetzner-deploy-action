@@ -19,6 +19,7 @@ const validInputs: ValidatableInputs = {
   projectTag: "myproject",
   ipv6Only: "false",
   containerImage: "",
+  containerPort: "",
   haproxyCfg: "",
   firewallEnabled: "",
 };
@@ -373,6 +374,41 @@ describe("validateInputs — serviceName (optional)", () => {
   it("rejects service name starting with dot", () => {
     expect(() =>
       validateInputs(withOverride({ serviceName: ".hidden" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// containerPort (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — containerPort (optional)", () => {
+  it('accepts a single port like "8080"', () => {
+    expect(() =>
+      validateInputs(withOverride({ containerPort: "8080" })),
+    ).not.toThrow();
+  });
+
+  it('accepts a port mapping like "8080:80"', () => {
+    expect(() =>
+      validateInputs(withOverride({ containerPort: "8080:80" })),
+    ).not.toThrow();
+  });
+
+  it("rejects non-numeric containerPort", () => {
+    expect(() =>
+      validateInputs(withOverride({ containerPort: "abc" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects containerPort mappings with a non-numeric target", () => {
+    expect(() =>
+      validateInputs(withOverride({ containerPort: "80:abc" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects malformed containerPort separators", () => {
+    expect(() =>
+      validateInputs(withOverride({ containerPort: "8080::80" })),
     ).toThrow(/INPUT_VALIDATION_/);
   });
 });

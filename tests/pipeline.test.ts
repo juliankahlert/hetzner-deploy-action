@@ -36,6 +36,10 @@ vi.mock("../src/deploy/rsync.js", () => ({
   rsyncDeploy: vi.fn(),
 }));
 
+vi.mock("../src/deploy/podman.js", () => ({
+  deployPodman: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (receive mocked implementations)
 // ---------------------------------------------------------------------------
@@ -47,6 +51,7 @@ import { findOrCreateServer } from "../src/hetzner/findOrCreateServer.js";
 import { ensureTargetDir, installSystemdUnit } from "../src/deploy/remoteSetup.js";
 import { installPackages } from "../src/deploy/packageInstall.js";
 import { rsyncDeploy } from "../src/deploy/rsync.js";
+import { deployPodman } from "../src/deploy/podman.js";
 import {
   deployPipeline,
   activeStages,
@@ -97,6 +102,12 @@ function withInputs(overrides: Partial<ActionInputs>): ActionInputs {
 let callOrder: string[];
 
 function trackCallOrder(): void {
+  vi.mocked(core.info).mockImplementation((message?: string) => {
+    const match = /^Step \d+\/\d+: \[(haproxy|firewall)\]$/.exec(String(message));
+    if (match) {
+      callOrder.push(match[1]!);
+    }
+  });
   vi.mocked(installPackages).mockImplementation(async () => {
     callOrder.push(STAGES.installPackages);
   });
@@ -105,6 +116,10 @@ function trackCallOrder(): void {
   });
   vi.mocked(rsyncDeploy).mockImplementation(async () => {
     callOrder.push(STAGES.rsyncDeploy);
+  });
+  vi.mocked(deployPodman).mockImplementation(async () => {
+    callOrder.push(STAGES.podman);
+    return { quadletUploaded: true, serviceRestarted: true };
   });
   vi.mocked(installSystemdUnit).mockImplementation(async () => {
     callOrder.push(STAGES.systemd);
@@ -129,6 +144,10 @@ beforeEach(() => {
   vi.mocked(installPackages).mockResolvedValue(undefined);
   vi.mocked(ensureTargetDir).mockResolvedValue(undefined);
   vi.mocked(rsyncDeploy).mockResolvedValue(undefined);
+  vi.mocked(deployPodman).mockResolvedValue({
+    quadletUploaded: true,
+    serviceRestarted: true,
+  });
   vi.mocked(installSystemdUnit).mockResolvedValue({
     unitInstalled: true,
     serviceRestarted: true,
@@ -286,6 +305,27 @@ describe("deployPipeline — stage ordering", () => {
 
     expect(installSystemdUnit).not.toHaveBeenCalled();
   });
+
+  it("calls podman before haproxy and firewall when those stages are active", async () => {
+    trackCallOrder();
+
+    await deployPipeline(
+      withInputs({
+        containerImage: "docker.io/myapp:latest",
+        haproxyCfg: "/etc/haproxy/haproxy.cfg",
+        firewallEnabled: true,
+      }),
+    );
+
+    expect(callOrder).toEqual([
+      STAGES.installPackages,
+      STAGES.ensureTargetDir,
+      STAGES.rsyncDeploy,
+      STAGES.podman,
+      STAGES.haproxy,
+      STAGES.firewall,
+    ]);
+  });
 });
 
 // ===========================================================================
@@ -342,18 +382,13 @@ describe("deployPipeline — conditional skipping", () => {
   it("skips podman stage when containerImage is absent", async () => {
     await deployPipeline(BASE_INPUTS);
 
-    // core.info should not mention podman stage — no podman call exists
-    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
-    const podmanStepCalls = infoCalls.filter((msg) => /\[podman\]/.test(msg));
-    expect(podmanStepCalls).toHaveLength(0);
+    expect(deployPodman).not.toHaveBeenCalled();
   });
 
   it("executes podman stage when containerImage is present", async () => {
     await deployPipeline(withInputs({ containerImage: "docker.io/myapp:latest" }));
 
-    const infoCalls = vi.mocked(core.info).mock.calls.map((c) => String(c[0]));
-    const podmanMentions = infoCalls.filter((msg) => /\[podman\]/.test(msg));
-    expect(podmanMentions.length).toBeGreaterThan(0);
+    expect(deployPodman).toHaveBeenCalledOnce();
   });
 
   it("skips haproxy stage when haproxyCfg is absent", async () => {
@@ -426,6 +461,14 @@ describe("deployPipeline — error propagation", () => {
     await expect(
       deployPipeline(withInputs({ serviceName: "myapp" })),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_systemd: daemon-reload failed$/);
+  });
+
+  it("wraps podman failure with DEPLOY_PIPELINE_podman prefix", async () => {
+    vi.mocked(deployPodman).mockRejectedValueOnce(new Error("quadlet upload failed"));
+
+    await expect(
+      deployPipeline(withInputs({ containerImage: "docker.io/myapp:latest" })),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_podman: quadlet upload failed$/);
   });
 
   it("wraps non-Error thrown values in the DEPLOY_PIPELINE_ prefix", async () => {
@@ -544,6 +587,45 @@ describe("deployPipeline — stage arguments", () => {
       user: "deploy",
       privateKey: "PRIVATE_KEY",
       targetDir: "/opt/app",
+      serviceName: "myapp",
+      ipv6Only: false,
+    });
+  });
+
+  it("passes correct options to deployPodman when containerImage is set", async () => {
+    await deployPipeline(
+      withInputs({
+        containerImage: "docker.io/myapp:latest",
+        containerPort: "8080:80",
+        serviceName: "myapp",
+      }),
+    );
+
+    expect(deployPodman).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      image: "docker.io/myapp:latest",
+      port: "8080:80",
+      serviceName: "myapp",
+      ipv6Only: false,
+    });
+  });
+
+  it("defaults deployPodman port to 8080 when containerPort is omitted", async () => {
+    await deployPipeline(
+      withInputs({
+        containerImage: "docker.io/myapp:latest",
+        serviceName: "myapp",
+      }),
+    );
+
+    expect(deployPodman).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      image: "docker.io/myapp:latest",
+      port: "8080",
       serviceName: "myapp",
       ipv6Only: false,
     });

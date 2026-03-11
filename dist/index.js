@@ -28241,7 +28241,134 @@ async function rsyncDeploy(opts) {
     }
 }
 //# sourceMappingURL=rsync.js.map
+;// CONCATENATED MODULE: ./lib/deploy/podman.js
+
+
+
+
+/* ------------------------------------------------------------------ */
+/*  Error-prefix constants                                            */
+/* ------------------------------------------------------------------ */
+const ERR_RENDER = "PODMAN_RENDER";
+const ERR_UPLOAD = "PODMAN_UPLOAD";
+const ERR_START = "PODMAN_START";
+/* ------------------------------------------------------------------ */
+/*  Template rendering                                                */
+/* ------------------------------------------------------------------ */
+/**
+ * Read the bundled Quadlet container template and substitute placeholders.
+ *
+ * Exported for unit-testing; production callers should use
+ * {@link deployPodman} instead.
+ */
+function renderQuadlet(vars) {
+    const templatePath = external_node_path_namespaceObject.resolve(__dirname, "..", "..", "templates", "quadlet.container");
+    let content;
+    try {
+        if (external_node_fs_namespaceObject.existsSync(templatePath)) {
+            content = external_node_fs_namespaceObject.readFileSync(templatePath, "utf-8");
+        }
+        else {
+            // Fallback minimal template (when running from ncc bundle where
+            // template may not be adjacent)
+            content = [
+                "[Unit]",
+                "Description={{SERVICE_NAME}}",
+                "After=network-online.target",
+                "Requires=network-online.target",
+                "",
+                "[Container]",
+                "Image={{IMAGE}}",
+                "PublishPort={{PORT}}",
+                "AutoUpdate=registry",
+                "",
+                "[Service]",
+                "Restart=on-failure",
+                "RestartSec=5",
+                "NoNewPrivileges=true",
+                "",
+                "[Install]",
+                "WantedBy=multi-user.target default.target",
+            ].join("\n");
+        }
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${ERR_RENDER}: failed to load template: ${msg}`);
+    }
+    for (const [key, value] of Object.entries(vars)) {
+        content = content.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), () => value);
+    }
+    return content;
+}
+/* ------------------------------------------------------------------ */
+/*  Public API                                                        */
+/* ------------------------------------------------------------------ */
+/**
+ * Deploy a container to a remote host using Podman Quadlet.
+ *
+ * Steps:
+ *   1. Render the Quadlet `.container` template with the provided options.
+ *   2. Upload the rendered file to `/etc/containers/systemd/<name>.container`
+ *      on the remote host via heredoc over SSH (`sudo tee`).
+ *   3. Run `systemctl daemon-reload` to pick up the new Quadlet unit.
+ *   4. Restart the generated service.
+ *
+ * All errors are prefixed with their stage label (`PODMAN_RENDER`,
+ * `PODMAN_UPLOAD`, `PODMAN_START`) for easy identification in CI logs.
+ */
+async function deployPodman(opts) {
+    const { host, user, privateKey, image, port, serviceName, ipv6Only = false, } = opts;
+    const result = {
+        quadletUploaded: false,
+        serviceRestarted: false,
+    };
+    // 1. Render the Quadlet template
+    lib_core.info(`[${ERR_RENDER}] Rendering Quadlet template for "${serviceName}"…`);
+    const quadletContent = renderQuadlet({
+        SERVICE_NAME: serviceName,
+        IMAGE: image,
+        PORT: port,
+    });
+    const remotePath = `/etc/containers/systemd/${serviceName}.container`;
+    await withKeyFile(privateKey, async (keyPath) => {
+        // 2. Upload the Quadlet file via heredoc
+        lib_core.info(`[${ERR_UPLOAD}] Uploading Quadlet file to ${remotePath}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo mkdir -p /etc/containers/systemd && sudo tee ${shellQuote(remotePath)} > /dev/null << 'QUADLET_EOF'\n${quadletContent}\nQUADLET_EOF`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_UPLOAD}: ${msg}`);
+        }
+        result.quadletUploaded = true;
+        lib_core.info(`[${ERR_UPLOAD}] Quadlet file written to ${remotePath}.`);
+        // 3. Reload systemd daemon to process the new Quadlet file
+        lib_core.info(`[${ERR_START}] Running systemctl daemon-reload…`);
+        try {
+            await sshExec(keyPath, user, host, "sudo systemctl daemon-reload", ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_START}: daemon-reload failed: ${msg}`);
+        }
+        // 4. Restart the service (Quadlet generates a service named after the file)
+        lib_core.info(`[${ERR_START}] Restarting ${serviceName}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo systemctl restart ${shellQuote(serviceName)}`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_START}: restart failed: ${msg}`);
+        }
+        result.serviceRestarted = true;
+        lib_core.info(`[${ERR_START}] Service "${serviceName}" restarted successfully.`);
+    });
+    return result;
+}
+//# sourceMappingURL=podman.js.map
 ;// CONCATENATED MODULE: ./lib/pipeline.js
+
 
 
 
@@ -28346,6 +28473,7 @@ async function deployPipeline(inputs) {
     const stages = activeStages(inputs);
     const total = stages.length;
     let setupResult = { unitInstalled: false, serviceRestarted: false };
+    let podmanResult = { quadletUploaded: false, serviceRestarted: false };
     for (let i = 0; i < stages.length; i++) {
         const stage = stages[i];
         const stepLabel = `Step ${i + 1}/${total}`;
@@ -28380,8 +28508,19 @@ async function deployPipeline(inputs) {
                     });
                     break;
                 case STAGES.podman:
-                    // Future: container deployment via podman
-                    lib_core.info(`[${stage}] Podman container deployment not yet implemented.`);
+                    if (!inputs.containerImage) {
+                        throw new Error("container_image is required for podman deployment");
+                    }
+                    podmanResult = await deployPodman({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        privateKey: inputs.sshPrivateKey,
+                        image: inputs.containerImage,
+                        port: inputs.containerPort ?? "8080",
+                        serviceName: inputs.serviceName || "app",
+                        ipv6Only: inputs.ipv6Only,
+                    });
+                    lib_core.info(`Podman service "${inputs.serviceName || "app"}" deployed and restarted.`);
                     break;
                 case STAGES.systemd:
                     setupResult = await installSystemdUnit({
@@ -28420,6 +28559,10 @@ async function deployPipeline(inputs) {
     lib_core.info("--- Deployment complete ---");
     lib_core.info(`  stages executed: ${stages.join(", ")}`);
     lib_core.info(`  rsync:             done`);
+    if (stages.includes(STAGES.podman)) {
+        lib_core.info(`  podman quadlet:    ${podmanResult.quadletUploaded ? "uploaded" : "skipped"}`);
+        lib_core.info(`  podman restarted:  ${podmanResult.serviceRestarted ? "yes" : "no"}`);
+    }
     lib_core.info(`  systemd unit:      ${setupResult.unitInstalled ? "installed" : "skipped"}`);
     lib_core.info(`  service restarted: ${setupResult.serviceRestarted ? "yes" : "no"}`);
     lib_core.info("Pipeline completed.");
@@ -28492,6 +28635,13 @@ const rules = [
         optional: true,
     },
     {
+        field: "containerPort",
+        label: "container_port",
+        pattern: /^\d{1,5}(:\d{1,5})?$/,
+        hint: 'Must be a port like "8080" or a port mapping like "8080:80".',
+        optional: true,
+    },
+    {
         field: "haproxyCfg",
         label: "haproxy_cfg",
         pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
@@ -28544,6 +28694,7 @@ function parseInputs() {
         projectTag: lib_core.getInput("project_tag", { required: true }),
         ipv6Only: lib_core.getInput("ipv6_only"),
         containerImage: lib_core.getInput("container_image"),
+        containerPort: lib_core.getInput("container_port"),
         haproxyCfg: lib_core.getInput("haproxy_cfg"),
         firewallEnabled: lib_core.getInput("firewall_enabled"),
     };
@@ -28563,6 +28714,7 @@ function parseInputs() {
         sourceDir: raw.sourceDir,
         targetDir: raw.targetDir,
         containerImage: raw.containerImage || undefined,
+        containerPort: raw.containerPort || undefined,
         haproxyCfg: raw.haproxyCfg || undefined,
         firewallEnabled: raw.firewallEnabled === "true",
     };
@@ -28590,6 +28742,7 @@ function logInputs(inputs) {
     lib_core.info(`  public_key:   ${inputs.publicKey ? "(provided)" : "(not set)"}`);
     lib_core.info(`  ssh_private_key: ${inputs.sshPrivateKey ? "(provided)" : "(not set)"}`);
     lib_core.info(`  container_image: ${inputs.containerImage ?? "(not set)"}`);
+    lib_core.info(`  container_port: ${inputs.containerPort ?? "(not set)"}`);
     lib_core.info(`  haproxy_cfg:     ${inputs.haproxyCfg ?? "(not set)"}`);
     lib_core.info(`  firewall_enabled: ${String(inputs.firewallEnabled)}`);
 }

@@ -15,6 +15,7 @@ function parseInputs(): ActionInputs {
     projectTag: core.getInput("project_tag", { required: true }),
     ipv6Only: core.getInput("ipv6_only"),
     containerImage: core.getInput("container_image"),
+    containerPort: core.getInput("container_port"),
     haproxyCfg: core.getInput("haproxy_cfg"),
     firewallEnabled: core.getInput("firewall_enabled"),
   };
@@ -36,6 +37,7 @@ function parseInputs(): ActionInputs {
     sourceDir: raw.sourceDir,
     targetDir: raw.targetDir,
     containerImage: raw.containerImage || undefined,
+    containerPort: raw.containerPort || undefined,
     haproxyCfg: raw.haproxyCfg || undefined,
     firewallEnabled: raw.firewallEnabled === "true",
   };
@@ -69,6 +71,7 @@ function logInputs(inputs: ActionInputs): void {
   core.info(
     `  container_image: ${inputs.containerImage ?? "(not set)"}`,
   );
+  core.info(`  container_port: ${inputs.containerPort ?? "(not set)"}`);
   core.info(
     `  haproxy_cfg:     ${inputs.haproxyCfg ?? "(not set)"}`,
   );

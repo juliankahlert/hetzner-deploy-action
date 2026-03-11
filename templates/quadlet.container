@@ -1,0 +1,17 @@
+[Unit]
+Description={{SERVICE_NAME}}
+After=network-online.target
+Requires=network-online.target
+
+[Container]
+Image={{IMAGE}}
+PublishPort={{PORT}}
+AutoUpdate=registry
+
+[Service]
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target default.target

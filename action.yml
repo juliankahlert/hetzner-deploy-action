@@ -57,6 +57,11 @@ inputs:
   container_image:
     description: 'Container image reference — enables the podman stage when set'
     required: false
+  # Pattern: ^\d{1,5}(:\d{1,5})?$ (optional)
+  container_port:
+    description: 'Container port mapping for Podman, e.g. 8080 or 8080:80'
+    required: false
+    default: '8080'
   # Pattern: relative or absolute path without ".." sequences (optional)
   haproxy_cfg:
     description: 'Path to HAProxy config — enables the haproxy stage when set'
