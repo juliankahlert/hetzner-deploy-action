@@ -28723,10 +28723,16 @@ async function deployPipeline(inputs) {
     lib_core.info(`  server_id:     ${server.id}`);
     lib_core.info(`  server_ip:     ${server.ip}`);
     lib_core.info(`  server_status: ${server.status}`);
+    const effectiveIpv6Only = server.ipv6Only;
     /* ---- Deployment stages ---- */
     lib_core.info("--- Deployment ---");
+    if (effectiveIpv6Only !== inputs.ipv6Only) {
+        lib_core.warning(`Server networking differs from requested ipv6_only=${inputs.ipv6Only}; ` +
+            `server-effective ipv6_only=${effectiveIpv6Only}. ` +
+            "Continuing deployment using the server's effective IPv6 mode.");
+    }
     if (inputs.ipv6Only) {
-        lib_core.warning("ipv6_only is enabled — the runner must have IPv6 connectivity " +
+        lib_core.warning("ipv6_only is enabled by user request — the runner must have IPv6 connectivity " +
             `to reach the server at ${server.ip}. If deploy fails, verify that ` +
             "your GitHub Actions runner supports outbound IPv6.");
     }
@@ -28747,7 +28753,7 @@ async function deployPipeline(inputs) {
                         host: server.ip,
                         user: inputs.sshUser,
                         privateKey: inputs.sshPrivateKey,
-                        ipv6Only: inputs.ipv6Only,
+                        ipv6Only: effectiveIpv6Only,
                     });
                     break;
                 case STAGES.ensureTargetDir:
@@ -28756,7 +28762,7 @@ async function deployPipeline(inputs) {
                         user: inputs.sshUser,
                         privateKey: inputs.sshPrivateKey,
                         targetDir: inputs.targetDir,
-                        ipv6Only: inputs.ipv6Only,
+                        ipv6Only: effectiveIpv6Only,
                     });
                     break;
                 case STAGES.rsyncDeploy:
@@ -28766,7 +28772,7 @@ async function deployPipeline(inputs) {
                         sourceDir: inputs.sourceDir,
                         targetDir: inputs.targetDir,
                         sshKey: inputs.sshPrivateKey,
-                        ipv6Only: inputs.ipv6Only,
+                        ipv6Only: effectiveIpv6Only,
                     });
                     break;
                 case STAGES.podman:
@@ -28780,7 +28786,7 @@ async function deployPipeline(inputs) {
                         image: inputs.containerImage,
                         port: inputs.containerPort ?? "8080",
                         serviceName: inputs.serviceName || "app",
-                        ipv6Only: inputs.ipv6Only,
+                        ipv6Only: effectiveIpv6Only,
                     });
                     lib_core.info(`Podman service "${inputs.serviceName || "app"}" deployed and restarted.`);
                     break;
@@ -28791,7 +28797,7 @@ async function deployPipeline(inputs) {
                         privateKey: inputs.sshPrivateKey,
                         targetDir: inputs.targetDir,
                         serviceName: inputs.serviceName,
-                        ipv6Only: inputs.ipv6Only,
+                        ipv6Only: effectiveIpv6Only,
                     });
                     lib_core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
                     break;
@@ -28805,7 +28811,7 @@ async function deployPipeline(inputs) {
                             user: inputs.sshUser,
                             privateKey: inputs.sshPrivateKey,
                             cfgPath: inputs.haproxyCfg,
-                            ipv6Only: inputs.ipv6Only,
+                            ipv6Only: effectiveIpv6Only,
                         });
                     }
                     if (inputs.haproxyFragment) {
@@ -28818,7 +28824,7 @@ async function deployPipeline(inputs) {
                             privateKey: inputs.sshPrivateKey,
                             fragmentPath: inputs.haproxyFragment,
                             fragmentName: inputs.haproxyFragmentName,
-                            ipv6Only: inputs.ipv6Only,
+                            ipv6Only: effectiveIpv6Only,
                         });
                     }
                     lib_core.info("HAProxy configuration deployed and service reloaded.");
@@ -28828,7 +28834,7 @@ async function deployPipeline(inputs) {
                         host: server.ip,
                         user: inputs.sshUser,
                         privateKey: inputs.sshPrivateKey,
-                        ipv6Only: inputs.ipv6Only,
+                        ipv6Only: effectiveIpv6Only,
                         extraPorts: inputs.firewallExtraPorts,
                     });
                     lib_core.info("Firewall configured and enabled.");
@@ -28836,12 +28842,15 @@ async function deployPipeline(inputs) {
             }
         }
         catch (err) {
-            if (inputs.ipv6Only) {
-                const msg = err instanceof Error ? err.message : String(err);
-                throw new Error(`DEPLOY_PIPELINE_${stage}: Deploy to IPv6-only server failed: ${msg}\n` +
-                    "Hint: The server was provisioned with ipv6_only=true. Ensure " +
-                    "the GitHub Actions runner has outbound IPv6 connectivity. " +
-                    "Standard GitHub-hosted runners do NOT support IPv6.");
+            if (effectiveIpv6Only) {
+                if (inputs.ipv6Only) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    throw new Error(`DEPLOY_PIPELINE_${stage}: Deploy to IPv6-only server failed: ${msg}\n` +
+                        "Hint: The server-effective ipv6_only setting is true. Ensure " +
+                        "the GitHub Actions runner has outbound IPv6 connectivity. " +
+                        "Standard GitHub-hosted runners do NOT support IPv6.");
+                }
+                lib_core.warning("The server-effective ipv6_only setting is true. Deploy connectivity may still require outbound IPv6 support from the GitHub Actions runner.");
             }
             throw pipelineError(stage, err);
         }

@@ -157,7 +157,8 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
 
   if (effectiveIpv6Only !== inputs.ipv6Only) {
     core.warning(
-      `Requested ipv6_only=${inputs.ipv6Only}, but server-effective ipv6_only=${effectiveIpv6Only}. ` +
+      `Server networking differs from requested ipv6_only=${inputs.ipv6Only}; ` +
+        `server-effective ipv6_only=${effectiveIpv6Only}. ` +
         "Continuing deployment using the server's effective IPv6 mode.",
     );
   }

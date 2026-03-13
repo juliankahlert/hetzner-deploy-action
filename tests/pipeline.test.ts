@@ -636,6 +636,50 @@ describe("deployPipeline — IPv6 error handling", () => {
   });
 });
 
+describe("deployPipeline — IPv6 propagation", () => {
+  it("passes ipv6Only true to deployment stages when server is IPv6-only", async () => {
+    vi.mocked(findOrCreateServer).mockResolvedValueOnce({
+      ...FAKE_SERVER,
+      ip: "2001:db8::1",
+      ipv6Only: true,
+    });
+
+    await deployPipeline(withInputs({ ipv6Only: false }));
+
+    expect(installPackages).toHaveBeenCalledWith(expect.objectContaining({ ipv6Only: true }));
+    expect(ensureTargetDir).toHaveBeenCalledWith(expect.objectContaining({ ipv6Only: true }));
+    expect(rsyncDeploy).toHaveBeenCalledWith(expect.objectContaining({ ipv6Only: true }));
+  });
+
+  it("passes ipv6Only false to deployment stages when server is IPv4-only", async () => {
+    vi.mocked(findOrCreateServer).mockResolvedValueOnce({
+      ...FAKE_SERVER,
+      ip: "1.2.3.4",
+      ipv6Only: false,
+    });
+
+    await deployPipeline(withInputs({ ipv6Only: true }));
+
+    expect(installPackages).toHaveBeenCalledWith(expect.objectContaining({ ipv6Only: false }));
+    expect(ensureTargetDir).toHaveBeenCalledWith(expect.objectContaining({ ipv6Only: false }));
+    expect(rsyncDeploy).toHaveBeenCalledWith(expect.objectContaining({ ipv6Only: false }));
+  });
+
+  it("warns when server and input IPv6 modes differ", async () => {
+    vi.mocked(findOrCreateServer).mockResolvedValueOnce({
+      ...FAKE_SERVER,
+      ip: "2001:db8::1",
+      ipv6Only: true,
+    });
+
+    await deployPipeline(withInputs({ ipv6Only: false }));
+
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining("Server networking differs"),
+    );
+  });
+});
+
 // ===========================================================================
 // 8. deployPipeline — passes correct arguments to deploy stages
 // ===========================================================================
