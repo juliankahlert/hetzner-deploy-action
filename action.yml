@@ -1,98 +1,85 @@
-name: 'Hetzner Deploy Action'
-description: 'Create or update a Hetzner Cloud server and deploy a directory to it.'
-author: 'Julian Kahlert'
+name: Hetzner Deploy Action
+description: Create or update a Hetzner Cloud server and deploy a directory to it.
+author: Julian Kahlert
 inputs:
   hcloud_token:
-    description: 'Hetzner API token (store as secret)'
+    description: Hetzner API token (store as secret)
     required: true
-  # Pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$
   server_name:
-    description: 'Logical server name to find or create'
+    description: Logical server name to find or create
     required: true
-  # Pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$
   project_tag:
-    description: 'Tag used to identify servers shared across repos'
+    description: Tag used to identify servers shared across repos
     required: true
-  # Pattern: ^[a-zA-Z][a-zA-Z0-9._-]{0,63}$
   image:
     description: 'Hetzner image slug (default: ubuntu-24.04)'
     required: false
-    default: 'ubuntu-24.04'
-  # Pattern: ^[a-z]{2,4}[0-9]{1,3}(-[a-z0-9]+)?$
+    default: ubuntu-24.04
   server_type:
     description: 'Hetzner server type (default: cx23)'
     required: false
-    default: 'cx23'
-  # Pattern: ^(true|false)$
+    default: cx23
   ipv6_only:
-    description: 'If true, provision with IPv6 only (no public IPv4)'
+    description: 'If true, provision with IPv6 only (no public IPv4). Warning: GitHub-hosted
+      runners do not provide outbound IPv6 connectivity, so this action''s deploy
+      stages and any later steps that connect to an IPv6-only server require a self-hosted
+      runner with IPv6 support.'
     required: false
     default: 'false'
   public_key:
-    description: 'SSH public key to register on the server'
+    description: SSH public key to register on the server
     required: true
   ssh_private_key:
-    description: 'SSH private key for rsync (store as secret)'
+    description: SSH private key for rsync (store as secret)
     required: true
-  # Pattern: ^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$
   ssh_user:
-    description: 'SSH user for connecting to the server'
+    description: SSH user for connecting to the server
     required: false
-    default: 'root'
-  # Pattern: ^[a-zA-Z0-9][a-zA-Z0-9._@-]{0,255}$ (optional)
+    default: root
   service_name:
-    description: 'Systemd service name to restart after deploy'
+    description: Systemd service name to restart after deploy
     required: false
-  # Pattern: relative or absolute path without ".." sequences
   source_dir:
-    description: 'Directory in the workspace to deploy'
+    description: Directory in the workspace to deploy
     required: false
-    default: '.'
-  # Pattern: absolute path (starts with /) without ".." sequences
+    default: .
   target_dir:
-    description: 'Target directory on the VPS where files will be placed'
+    description: Target directory on the VPS where files will be placed
     required: false
-    default: '/opt/app'
-  # Pattern: ^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$ (optional)
+    default: /opt/app
   container_image:
-    description: 'Container image reference — enables the podman stage when set'
+    description: "Container image reference \u2014 enables the podman stage when set"
     required: false
-  # Pattern: ^\d{1,5}(:\d{1,5})?$ (optional)
   container_port:
-    description: 'Container port mapping for Podman, e.g. 8080 or 8080:80'
+    description: Container port mapping for Podman, e.g. 8080 or 8080:80
     required: false
     default: '8080'
-  # Pattern: relative or absolute path without ".." sequences (optional)
   haproxy_cfg:
-    description: 'Path to HAProxy config — enables the haproxy stage when set'
+    description: "Path to HAProxy config \u2014 enables the haproxy stage when set"
     required: false
-  # Pattern: ^(true|false)$ (optional)
   firewall_enabled:
-    description: 'If true, enable the firewall stage'
+    description: If true, enable the firewall stage
     required: false
     default: 'true'
-  # Pattern: relative or absolute path without ".." sequences (optional)
   haproxy_fragment:
-    description: 'Path to an HAProxy config fragment to append when haproxy_cfg is set'
+    description: Path to an HAProxy config fragment to append when haproxy_cfg is
+      set
     required: false
-  # Pattern: ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$ (optional)
   haproxy_fragment_name:
-    description: 'Optional name used for the HAProxy fragment file on the server'
+    description: Optional name used for the HAProxy fragment file on the server
     required: false
-    default: 'fragment'
-  # Pattern: ^[0-9, -]*$ (optional)
+    default: fragment
   firewall_extra_ports:
-    description: 'Comma-separated extra firewall ports to allow, e.g. 8080, 8443'
+    description: Comma-separated extra firewall ports to allow, e.g. 8080, 8443
     required: false
     default: ''
 outputs:
   server_ip:
-    description: 'Public IP address of the server (IPv4 by default; IPv6 when ipv6_only is true)'
+    description: 'Public IP address of the server. Reflects the server''s actual networking state: IPv4 by default, or IPv6 when the server is IPv6-only. When reusing an existing IPv6-only server, this returns the IPv6 address even if ipv6_only is set to false.'
   server_id:
-    description: 'Hetzner server ID'
+    description: Hetzner server ID
   server_status:
-    description: 'Server status after provisioning'
-
+    description: Server status after provisioning
 runs:
-  using: 'node20'
-  main: 'dist/index.js'
+  using: node20
+  main: dist/index.js

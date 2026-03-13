@@ -46,7 +46,7 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 | `ssh_private_key` | **yes** | — | SSH private key used for rsync. Store as a secret. |
 | `image` | no | `ubuntu-24.04` | Hetzner image slug for new servers. |
 | `server_type` | no | `cx23` | Hetzner server type (size). |
-| `ipv6_only` | no | `false` | Provision with IPv6 only (no public IPv4). |
+| `ipv6_only` | no | `false` | Provision with IPv6 only (no public IPv4). **Warning:** GitHub-hosted runners do not provide outbound IPv6 connectivity, so this action's deploy stages and any later steps that connect to an IPv6-only server require a self-hosted runner with IPv6 support. |
 | `ssh_user` | no | `root` | SSH user for connecting to the server. |
 | `source_dir` | no | `.` | Workspace directory to deploy. |
 | `target_dir` | no | `/opt/app` | Remote directory where files are placed. |
@@ -67,7 +67,7 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 
 | Output | Description |
 |--------|-------------|
-| `server_ip` | Public IP address of the server (IPv4 by default; IPv6 when `ipv6_only` is `true`). |
+| `server_ip` | Public IP address of the server. Reflects the server's **actual networking state**: IPv4 by default, or IPv6 when the server was provisioned with `ipv6_only`. When reusing an existing IPv6-only server, this output returns the IPv6 address even if the current workflow sets `ipv6_only=false`. |
 | `server_id` | Hetzner Cloud server ID. |
 | `server_status` | Server status after provisioning (e.g. `running`). |
 
@@ -102,6 +102,19 @@ The action executes a pipeline of ordered stages. Core stages always run; option
 | firewall | `firewall_enabled` is `true` (default) |
 
 > **Note:** When `container_image` is set, the Podman Quadlet manages the service via systemd. The standalone systemd stage is skipped to avoid conflicts.
+
+### IPv6 and runner compatibility
+
+GitHub-hosted runners only have outbound IPv4 connectivity. If your server is IPv6-only, Hetzner API provisioning may still work from a GitHub-hosted runner, but this action's deploy stages (SSH/rsync) and any later direct connections to the server require runner IPv6 connectivity.
+
+| Scenario | Runner requirement |
+|----------|--------------------|
+| `ipv6_only=true`, provision only | GitHub-hosted runner works |
+| `ipv6_only=true`, provision + deploy | Self-hosted runner with IPv6 required |
+| `ipv6_only=true`, post-deploy connectivity to server | Self-hosted runner with IPv6 required |
+| `ipv6_only=false` (default) | Any runner works |
+
+**Automatic detection and mismatch warning:** When the action reuses an existing server, it detects the server's actual IP configuration. If the server is IPv6-only but `ipv6_only` is set to `false` (or left at its default), the action emits a warning to alert you to the mismatch. The deploy continues using the server's real IPv6 address, and `server_ip` reflects that address — not the value of the `ipv6_only` input.
 
 ---
 
