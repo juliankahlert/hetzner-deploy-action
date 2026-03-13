@@ -20,5 +20,8 @@
     "typescript": "^5.7.3",
     "vitest": "^4.0.18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "undici": ">=6.24.0"
+  }
 }
