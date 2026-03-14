@@ -49,6 +49,18 @@ export interface HaproxyBaseOptions {
   ipv6Only?: boolean;
 }
 
+/** Options for ensuring the bundled HAProxy fragment service exists remotely. */
+export interface EnsureHaproxyFragServiceOptions {
+  /** Server IP or hostname. */
+  host: string;
+  /** SSH user (e.g. "root"). */
+  user: string;
+  /** SSH private key content. */
+  privateKey: string;
+  /** When true the host is an IPv6 address — forces ssh to use `-6`. */
+  ipv6Only?: boolean;
+}
+
 /** Result returned after an HAProxy configuration deployment. */
 export interface HaproxyDeployResult {
   /** Whether the configuration file was uploaded to the remote host. */
@@ -64,6 +76,7 @@ export interface HaproxyDeployResult {
 const ERR_UPLOAD = "HAPROXY_UPLOAD";
 const ERR_VALIDATE = "HAPROXY_VALIDATE";
 const ERR_RELOAD = "HAPROXY_RELOAD";
+const ERR_SERVICE_INSTALL = "HAPROXY_SERVICE_INSTALL";
 const HAPROXY_BASE_FALLBACK = `global
   daemon
   log stdout format raw local0
@@ -79,6 +92,22 @@ defaults
   timeout server 30s
 
 include /etc/haproxy/conf.d/
+`;
+const HAPROXY_FRAG_SERVICE_FALLBACK = `[Unit]
+Description=HAProxy fragment orchestration service
+After=network.target
+
+[Service]
+Type=notify
+ExecStartPre=/usr/sbin/haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/ -p /run/haproxy-frag.pid
+ExecReload=/usr/sbin/haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/
+ExecReload=/bin/kill -USR2 $MAINPID
+KillMode=mixed
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
 `;
 
 function readBundledHaproxyBase(): string {
@@ -99,6 +128,29 @@ function readBundledHaproxyBase(): string {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`${ERR_UPLOAD}: failed to read bundled HAProxy base config: ${msg}`);
+  }
+}
+
+function readBundledHaproxyFragService(): string {
+  const templatePath = path.resolve(
+    __dirname,
+    "..",
+    "..",
+    "templates",
+    "haproxy-frag.service",
+  );
+
+  if (!fs.existsSync(templatePath)) {
+    return HAPROXY_FRAG_SERVICE_FALLBACK;
+  }
+
+  try {
+    return fs.readFileSync(templatePath, "utf-8");
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `${ERR_SERVICE_INSTALL}: failed to read bundled HAProxy frag service: ${msg}`,
+    );
   }
 }
 
@@ -172,13 +224,13 @@ export async function deployHaproxy(
     }
     core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
 
-    core.info(`[${ERR_RELOAD}] Reloading haproxy service…`);
+    core.info(`[${ERR_RELOAD}] Reloading haproxy-frag service…`);
     try {
       await sshExec(
         keyPath,
         user,
         host,
-        "sudo systemctl reload haproxy",
+        "sudo systemctl reload haproxy-frag",
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -186,7 +238,7 @@ export async function deployHaproxy(
       throw new Error(`${ERR_RELOAD}: ${msg}`);
     }
     result.serviceReloaded = true;
-    core.info(`[${ERR_RELOAD}] haproxy service reloaded successfully.`);
+    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded successfully.`);
   });
 
   return result;
@@ -246,13 +298,13 @@ export async function deployHaproxyBase(
     }
     core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
 
-    core.info(`[${ERR_RELOAD}] Reloading haproxy service…`);
+    core.info(`[${ERR_RELOAD}] Reloading haproxy-frag service…`);
     try {
       await sshExec(
         keyPath,
         user,
         host,
-        "sudo systemctl reload haproxy",
+        "sudo systemctl reload haproxy-frag",
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -260,10 +312,88 @@ export async function deployHaproxyBase(
       throw new Error(`${ERR_RELOAD}: ${msg}`);
     }
     result.serviceReloaded = true;
-    core.info(`[${ERR_RELOAD}] haproxy service reloaded successfully.`);
+    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded successfully.`);
   });
 
   return result;
+}
+
+/**
+ * Ensure the bundled fragment-aware HAProxy systemd unit is installed.
+ */
+export async function ensureHaproxyFragService(
+  opts: EnsureHaproxyFragServiceOptions,
+): Promise<void> {
+  const { host, user, privateKey, ipv6Only = false } = opts;
+
+  const remotePath = "/etc/systemd/system/haproxy-frag.service";
+  const serviceContent = readBundledHaproxyFragService();
+
+  core.info(
+    `[${ERR_SERVICE_INSTALL}] Installing bundled haproxy-frag service unit to ${remotePath}…`,
+  );
+
+  await withKeyFile(privateKey, async (keyPath) => {
+    core.info(
+      `[${ERR_SERVICE_INSTALL}] Stopping and disabling default haproxy service before enabling haproxy-frag…`,
+    );
+    try {
+      await sshExec(
+        keyPath,
+        user,
+        host,
+        "sudo systemctl stop haproxy >/dev/null 2>&1 || true && sudo systemctl disable haproxy >/dev/null 2>&1 || true",
+        ipv6Only,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
+    }
+
+    core.info(`[${ERR_SERVICE_INSTALL}] Uploading haproxy-frag service unit to ${remotePath}…`);
+    try {
+      await sshExec(
+        keyPath,
+        user,
+        host,
+        `sudo mkdir -p ${shellQuote("/etc/systemd/system")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_SERVICE_EOF'\n${serviceContent}\nHAPROXY_SERVICE_EOF`,
+        ipv6Only,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
+    }
+    core.info(`[${ERR_SERVICE_INSTALL}] haproxy-frag service unit written to ${remotePath}.`);
+
+    core.info(`[${ERR_SERVICE_INSTALL}] Reloading systemd daemon…`);
+    try {
+      await sshExec(
+        keyPath,
+        user,
+        host,
+        "sudo systemctl daemon-reload",
+        ipv6Only,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
+    }
+
+    core.info(`[${ERR_SERVICE_INSTALL}] Enabling and starting haproxy-frag service…`);
+    try {
+      await sshExec(
+        keyPath,
+        user,
+        host,
+        "sudo systemctl enable --now haproxy-frag",
+        ipv6Only,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
+    }
+    core.info(`[${ERR_SERVICE_INSTALL}] haproxy-frag service enabled successfully.`);
+  });
 }
 
 /**
@@ -350,23 +480,23 @@ export async function deployHaproxyFragment(
     }
     core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
 
-    core.info(`[${ERR_RELOAD}] Reloading haproxy service…`);
+    core.info(`[${ERR_RELOAD}] Reloading haproxy-frag service…`);
     try {
       await sshExec(
         keyPath,
         user,
         host,
-        "sudo systemctl reload haproxy",
+        "sudo systemctl reload haproxy-frag",
         ipv6Only,
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `${ERR_RELOAD}: failed to reload haproxy after deploying fragment "${fragmentName}": ${msg}`,
+        `${ERR_RELOAD}: failed to reload haproxy-frag after deploying fragment "${fragmentName}": ${msg}`,
       );
     }
     result.serviceReloaded = true;
-    core.info(`[${ERR_RELOAD}] haproxy service reloaded successfully.`);
+    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded successfully.`);
   });
 
   return result;

@@ -10,6 +10,7 @@ import {
   deployHaproxy,
   deployHaproxyBase,
   deployHaproxyFragment,
+  ensureHaproxyFragService,
 } from "./deploy/haproxy.js";
 import { configureFirewall } from "./deploy/firewall.js";
 import { waitForSsh, withKeyFile } from "./deploy/ssh.js";
@@ -266,6 +267,12 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
               "haproxy_cfg or haproxy_fragment is required for haproxy deployment",
             );
           }
+          await ensureHaproxyFragService({
+            host: server.ip,
+            user: inputs.sshUser,
+            privateKey: inputs.sshPrivateKey,
+            ipv6Only: effectiveIpv6Only,
+          });
           if (inputs.haproxyCfg) {
             haproxyResult = await deployHaproxy({
               host: server.ip,

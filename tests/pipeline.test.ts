@@ -52,6 +52,7 @@ vi.mock("../src/deploy/haproxy.js", () => ({
   deployHaproxy: vi.fn(),
   deployHaproxyBase: vi.fn(),
   deployHaproxyFragment: vi.fn(),
+  ensureHaproxyFragService: vi.fn(),
 }));
 
 vi.mock("../src/deploy/firewall.js", () => ({
@@ -80,6 +81,7 @@ import {
   deployHaproxy,
   deployHaproxyBase,
   deployHaproxyFragment,
+  ensureHaproxyFragService,
 } from "../src/deploy/haproxy.js";
 import { configureFirewall } from "../src/deploy/firewall.js";
 import { withKeyFile, waitForSsh } from "../src/deploy/ssh.js";
@@ -198,6 +200,7 @@ beforeEach(() => {
     configUploaded: true,
     serviceReloaded: true,
   });
+  vi.mocked(ensureHaproxyFragService).mockResolvedValue(undefined);
   vi.mocked(configureFirewall).mockResolvedValue({
     firewallEnabled: true,
     rulesApplied: 4,
@@ -393,6 +396,23 @@ describe("deployPipeline — stage ordering", () => {
       STAGES.firewall,
     ]);
   });
+
+  it("calls ensureHaproxyFragService before haproxy deploy functions when haproxy stage is active", async () => {
+    await deployPipeline(
+      withInputs({
+        haproxyCfg: "/etc/haproxy/haproxy.cfg",
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    const ensureCall = vi.mocked(ensureHaproxyFragService).mock.invocationCallOrder[0];
+    const deployCfgCall = vi.mocked(deployHaproxy).mock.invocationCallOrder[0];
+    const deployFragmentCall = vi.mocked(deployHaproxyFragment).mock.invocationCallOrder[0];
+
+    expect(ensureCall).toBeLessThan(deployCfgCall);
+    expect(ensureCall).toBeLessThan(deployFragmentCall);
+  });
 });
 
 // ===========================================================================
@@ -487,6 +507,7 @@ describe("deployPipeline — conditional skipping", () => {
   it("skips haproxy stage when haproxyCfg is absent", async () => {
     await deployPipeline(BASE_INPUTS);
 
+    expect(ensureHaproxyFragService).not.toHaveBeenCalled();
     expect(deployHaproxy).not.toHaveBeenCalled();
     expect(deployHaproxyFragment).not.toHaveBeenCalled();
   });
@@ -494,6 +515,7 @@ describe("deployPipeline — conditional skipping", () => {
   it("executes haproxy stage when haproxyCfg is present", async () => {
     await deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
 
+    expect(ensureHaproxyFragService).toHaveBeenCalledOnce();
     expect(deployHaproxy).toHaveBeenCalledOnce();
     expect(deployHaproxyFragment).not.toHaveBeenCalled();
   });
@@ -601,6 +623,14 @@ describe("deployPipeline — error propagation", () => {
     await expect(
       deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" })),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: reload failed$/);
+  });
+
+  it("wraps haproxy helper failure with DEPLOY_PIPELINE_haproxy prefix", async () => {
+    vi.mocked(ensureHaproxyFragService).mockRejectedValueOnce(new Error("ensure service failed"));
+
+    await expect(
+      deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" })),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: ensure service failed$/);
   });
 
   it("wraps haproxy fragment failure with DEPLOY_PIPELINE_haproxy prefix", async () => {
@@ -827,6 +857,12 @@ describe("deployPipeline — stage arguments", () => {
   it("passes correct options to deployHaproxy when haproxyCfg is set", async () => {
     await deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
 
+    expect(ensureHaproxyFragService).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      ipv6Only: false,
+    });
     expect(deployHaproxy).toHaveBeenCalledWith({
       host: "1.2.3.4",
       user: "deploy",

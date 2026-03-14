@@ -1,0 +1,15 @@
+[Unit]
+Description=HAProxy fragment orchestration service
+After=network.target
+
+[Service]
+Type=notify
+ExecStartPre=/usr/sbin/haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/
+ExecStart=/usr/sbin/haproxy -Ws -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/ -p /run/haproxy-frag.pid
+ExecReload=/usr/sbin/haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/
+ExecReload=/bin/kill -USR2 $MAINPID
+KillMode=mixed
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
