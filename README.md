@@ -183,7 +183,7 @@ jobs:
     project_tag:     backend
     container_image: ghcr.io/my-org/api:latest
     container_port:  '8080:3000'
-    service_name:    api
+    service: { name: api, exec-start: /usr/bin/api serve, restart: always, restart-sec: 5 }
 ```
 
 ### Fragment-only HAProxy
@@ -218,7 +218,7 @@ Validation covers both paths: the action runs `haproxy -c -f /etc/haproxy/haprox
     target_dir:          /opt/gateway
     container_image:     ghcr.io/my-org/app:latest
     container_port:      '8080'
-    service_name:        app
+    service: { name: app, exec-start: /opt/gateway/bin/app, restart: on-failure, restart-sec: 3, user: app }
     haproxy_cfg:         ./haproxy/haproxy.cfg
     firewall_enabled:    'true'
     firewall_extra_ports: '443, 8443'
