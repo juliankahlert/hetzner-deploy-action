@@ -22,6 +22,25 @@ vi.mock("../src/pipeline.js", () => ({
 }));
 
 vi.mock("../src/validate.js", () => ({
+  VALID_SERVICE_KEYS: new Set([
+    "name",
+    "exec-start",
+    "type",
+    "restart",
+    "restart-sec",
+    "user",
+    "working-directory",
+  ]),
+  mapKebabToCamel: (raw: Record<string, unknown>) => ({
+    name: raw["name"] as string,
+    execStart: raw["exec-start"] as string,
+    type: raw["type"] as string | undefined,
+    restart: raw["restart"] as string | undefined,
+    restartSec:
+      raw["restart-sec"] != null ? Number(raw["restart-sec"]) : undefined,
+    user: raw["user"] as string | undefined,
+    workingDirectory: raw["working-directory"] as string | undefined,
+  }),
   validateInputs: mocks.validateInputs,
 }));
 
@@ -71,6 +90,9 @@ describe("src/index entrypoint", () => {
       ipv6_only: "true",
       server_type: "cx22",
       service_name: "demo.service",
+      service_restart: "always",
+      service_restart_sec: "9",
+      service_type: "notify",
       source_dir: "dist",
       ssh_user: "deployer",
       target_dir: "/srv/app",
@@ -93,6 +115,9 @@ describe("src/index entrypoint", () => {
       serverName: "demo-server",
       serverType: "cx22",
       serviceName: "demo.service",
+      serviceRestart: "always",
+      serviceRestartSec: "9",
+      serviceType: "notify",
       sourceDir: "dist",
       sshUser: "deployer",
       targetDir: "/srv/app",
@@ -114,6 +139,15 @@ describe("src/index entrypoint", () => {
       publicKey: "ssh-ed25519 AAAATEST",
       serverName: "demo-server",
       serverType: "cx22",
+      service: {
+        execStart: "/usr/bin/node /srv/app/server.js --port 8080",
+        name: "demo.service",
+        restart: "always",
+        restartSec: 9,
+        type: "notify",
+        user: undefined,
+        workingDirectory: undefined,
+      },
       serviceName: "demo.service",
       sourceDir: "dist",
       sshPrivateKey: "PRIVATE_KEY",
@@ -127,6 +161,7 @@ describe("src/index entrypoint", () => {
 
     const logs = infoMessages();
     expect(logs).toContain("  ipv6_only:    true");
+    expect(logs).toContain("  service:      (provided)");
     expect(logs).toContain("  service_name: (provided)");
     expect(logs).toContain("  exec_start:   (provided)");
     expect(logs).toContain("  container_image: ghcr.io/acme/app:1.2.3");
@@ -152,6 +187,7 @@ describe("src/index entrypoint", () => {
       publicKey: "ssh-ed25519 AAAATEST",
       serverName: "demo-server",
       serverType: "",
+      service: undefined,
       serviceName: "",
       sourceDir: "",
       sshPrivateKey: "PRIVATE_KEY",
@@ -160,6 +196,7 @@ describe("src/index entrypoint", () => {
     });
 
     const logs = infoMessages();
+    expect(logs).toContain("  service:      (not set)");
     expect(logs).toContain("  service_name: (not set)");
     expect(logs).toContain("  container_image: (not set)");
     expect(logs).toContain("  container_port: (not set)");
@@ -168,6 +205,80 @@ describe("src/index entrypoint", () => {
     expect(logs).toContain("  haproxy_fragment_name: (not set)");
     expect(logs).toContain("  firewall_enabled: false");
     expect(logs).toContain("  firewall_extra_ports: (not set)");
+  });
+
+  it("builds structured service config from flat defaults when service yaml is absent", async () => {
+    mockInputs({
+      service_name: "demo.service",
+    });
+
+    await importEntrypoint();
+
+    expect(mocks.validateInputs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceName: "demo.service",
+        serviceType: "simple",
+        serviceRestart: "on-failure",
+        serviceRestartSec: "5",
+      }),
+    );
+    expect(mocks.deployPipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceName: "demo.service",
+        service: {
+          name: "demo.service",
+          execStart: "/usr/bin/env bash -c 'echo \"demo.service started\"'",
+          type: "simple",
+          restart: "on-failure",
+          restartSec: 5,
+          user: undefined,
+          workingDirectory: undefined,
+        },
+      }),
+    );
+  });
+
+  it("prefers structured service yaml over flat service settings", async () => {
+    mockInputs({
+      exec_start: "/usr/bin/node /srv/app/legacy.js",
+      service: [
+        "name: yaml.service",
+        "exec-start: /usr/bin/node /srv/app/yaml.js",
+        "type: notify",
+        "restart: always",
+        "restart-sec: 11",
+      ].join("\n"),
+      service_name: "legacy.service",
+      service_restart: "on-failure",
+      service_restart_sec: "5",
+      service_type: "simple",
+    });
+
+    await importEntrypoint();
+
+    expect(mocks.validateInputs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceName: "yaml.service",
+        execStart: "/usr/bin/node /srv/app/yaml.js",
+        serviceType: "notify",
+        serviceRestart: "always",
+        serviceRestartSec: "11",
+      }),
+    );
+    expect(mocks.deployPipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        serviceName: "legacy.service",
+        service: {
+          name: "yaml.service",
+          execStart: "/usr/bin/node /srv/app/yaml.js",
+          type: "notify",
+          restart: "always",
+          restartSec: 11,
+          user: undefined,
+          workingDirectory: undefined,
+        },
+      }),
+    );
   });
 
   it("reports Error failures via core.setFailed", async () => {

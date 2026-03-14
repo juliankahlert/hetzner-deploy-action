@@ -14,6 +14,7 @@ import {
 } from "./deploy/haproxy.js";
 import { configureFirewall } from "./deploy/firewall.js";
 import { waitForSsh, withKeyFile } from "./deploy/ssh.js";
+import type { ServiceConfig } from "./validate.js";
 
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
@@ -59,6 +60,7 @@ export interface ActionInputs {
   sshPrivateKey: string;
   sshUser: string;
   serviceName: string;
+  service?: ServiceConfig;
   sourceDir: string;
   targetDir: string;
   /** Custom ExecStart command for the installed systemd unit. */
@@ -104,7 +106,7 @@ export function activeStages(inputs: ActionInputs): StageName[] {
       case STAGES.podman:
         return Boolean(inputs.containerImage);
       case STAGES.systemd:
-        return Boolean(inputs.serviceName) && !inputs.containerImage;
+        return Boolean(inputs.service?.name) && !inputs.containerImage;
       case STAGES.haproxy:
         return Boolean(inputs.haproxyCfg || inputs.haproxyFragment);
       case STAGES.firewall:
@@ -234,31 +236,38 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           if (!inputs.containerImage) {
             throw new Error("container_image is required for podman deployment");
           }
-          podmanResult = await deployPodman({
-            host: server.ip,
-            user: inputs.sshUser,
-            privateKey: inputs.sshPrivateKey,
-            image: inputs.containerImage,
-            port: inputs.containerPort ?? "8080",
-            serviceName: inputs.serviceName || "app",
-            ipv6Only: effectiveIpv6Only,
-          });
-          core.info(
-            `Podman service "${inputs.serviceName || "app"}" deployed and restarted.`,
-          );
+          {
+            const serviceName = inputs.service?.name || inputs.serviceName || "app";
+            podmanResult = await deployPodman({
+              host: server.ip,
+              user: inputs.sshUser,
+              privateKey: inputs.sshPrivateKey,
+              image: inputs.containerImage,
+              port: inputs.containerPort ?? "8080",
+              serviceName,
+              ipv6Only: effectiveIpv6Only,
+            });
+            core.info(`Podman service "${serviceName}" deployed and restarted.`);
+          }
           break;
 
         case STAGES.systemd:
+          if (!inputs.service?.name) {
+            throw new Error("service.name is required for systemd deployment");
+          }
           setupResult = await installSystemdUnit({
             host: server.ip,
             user: inputs.sshUser,
             privateKey: inputs.sshPrivateKey,
             targetDir: inputs.targetDir,
-            serviceName: inputs.serviceName,
-            execStart: inputs.execStart,
+            serviceName: inputs.service.name,
+            execStart: inputs.service.execStart,
+            serviceType: inputs.service.type,
+            serviceRestart: inputs.service.restart,
+            serviceRestartSec: inputs.service.restartSec,
             ipv6Only: effectiveIpv6Only,
           });
-          core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
+          core.info(`Service unit "${inputs.service.name}" installed and restarted.`);
           break;
 
         case STAGES.haproxy:

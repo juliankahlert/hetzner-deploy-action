@@ -39,8 +39,31 @@ inputs:
   service_name:
     description: Systemd service name to restart after deploy
     required: false
+  service:
+    description: Structured systemd service YAML mapping. When provided, YAML fields
+      override the flat service_* and exec_start inputs for matching settings. Prefer
+      this input for new configurations; the flat service inputs remain supported
+      for backward compatibility.
+    required: false
+    default: ''
+  service_type:
+    description: 'Systemd service Type= value (default: simple). Overridden when the
+      structured service YAML input includes type.'
+    required: false
+    default: simple
+  service_restart:
+    description: 'Systemd service Restart= value (default: on-failure). Overridden
+      when the structured service YAML input includes restart.'
+    required: false
+    default: on-failure
+  service_restart_sec:
+    description: 'Systemd service RestartSec= value in seconds (default: 5). Overridden
+      when the structured service YAML input includes restart-sec.'
+    required: false
+    default: '5'
   exec_start:
-    description: Custom systemd ExecStart= command to use for the service. When omitted, a placeholder command is used and a warning is emitted.
+    description: Custom systemd ExecStart= command to use for the service. When omitted,
+      a placeholder command is used and a warning is emitted.
     required: false
   source_dir:
     description: Directory in the workspace to deploy
@@ -78,7 +101,10 @@ inputs:
     default: ''
 outputs:
   server_ip:
-    description: 'Public IP address of the server. Reflects the server''s actual networking state: IPv4 by default, or IPv6 when the server is IPv6-only. When reusing an existing IPv6-only server, this returns the IPv6 address even if ipv6_only is set to false.'
+    description: 'Public IP address of the server. Reflects the server''s actual networking
+      state: IPv4 by default, or IPv6 when the server is IPv6-only. When reusing an
+      existing IPv6-only server, this returns the IPv6 address even if ipv6_only is
+      set to false.'
   server_id:
     description: Hetzner server ID
   server_status:

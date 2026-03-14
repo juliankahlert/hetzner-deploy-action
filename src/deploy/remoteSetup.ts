@@ -21,6 +21,12 @@ export interface RemoteSetupOptions {
   serviceName?: string;
   /** Command that systemd ExecStart= should invoke. Defaults to a no-op placeholder. */
   execStart?: string;
+  /** systemd service Type=. Defaults to "simple". */
+  serviceType?: string;
+  /** systemd service Restart=. Defaults to "on-failure". */
+  serviceRestart?: string;
+  /** systemd service RestartSec=. Defaults to "5". */
+  serviceRestartSec?: string | number;
   /** When true the host is an IPv6 address — forces ssh to use `-6`. */
   ipv6Only?: boolean;
 }
@@ -53,6 +59,12 @@ export interface InstallSystemdUnitOptions {
   serviceName: string;
   /** Command that systemd ExecStart= should invoke. Defaults to a no-op placeholder. */
   execStart?: string;
+  /** systemd service Type=. Defaults to "simple". */
+  serviceType?: string;
+  /** systemd service Restart=. Defaults to "on-failure". */
+  serviceRestart?: string;
+  /** systemd service RestartSec=. Defaults to "5". */
+  serviceRestartSec?: string | number;
   /** When true the host is an IPv6 address — forces ssh to use `-6`. */
   ipv6Only?: boolean;
 }
@@ -84,12 +96,14 @@ function renderUnit(vars: Record<string, string>): string {
       "After=network.target",
       "",
       "[Service]",
-      "Type=simple",
+      "Type={{SERVICE_TYPE}}",
       "User={{USER}}",
       "WorkingDirectory={{WORKING_DIR}}",
       "ExecStart={{EXEC_START}}",
-      "Restart=on-failure",
-      "RestartSec=5",
+      "Restart={{SERVICE_RESTART}}",
+      "RestartSec={{SERVICE_RESTART_SEC}}",
+      "StandardOutput=journal",
+      "StandardError=journal",
       "",
       "[Install]",
       "WantedBy=multi-user.target",
@@ -104,6 +118,18 @@ function renderUnit(vars: Record<string, string>): string {
 
 function resolveExecStart(serviceName: string, execStart?: string): string {
   return execStart ?? `/usr/bin/env bash -c 'echo "${serviceName} started"'`;
+}
+
+function resolveServiceType(serviceType?: string): string {
+  return serviceType ?? "simple";
+}
+
+function resolveServiceRestart(serviceRestart?: string): string {
+  return serviceRestart ?? "on-failure";
+}
+
+function resolveServiceRestartSec(serviceRestartSec?: string | number): string {
+  return String(serviceRestartSec ?? 5);
 }
 
 /* ------------------------------------------------------------------ */
@@ -144,17 +170,34 @@ export async function ensureTargetDir(
 export async function installSystemdUnit(
   opts: InstallSystemdUnitOptions,
 ): Promise<Pick<RemoteSetupResult, "unitInstalled" | "serviceRestarted">> {
-  const { host, user, privateKey, targetDir, serviceName, execStart, ipv6Only = false } = opts;
+  const {
+    host,
+    user,
+    privateKey,
+    targetDir,
+    serviceName,
+    execStart,
+    serviceType,
+    serviceRestart,
+    serviceRestartSec,
+    ipv6Only = false,
+  } = opts;
 
   const result = { unitInstalled: false, serviceRestarted: false };
 
   core.info(`Installing systemd unit for "${serviceName}"…`);
 
   const resolvedExecStart = resolveExecStart(serviceName, execStart);
+  const resolvedServiceType = resolveServiceType(serviceType);
+  const resolvedServiceRestart = resolveServiceRestart(serviceRestart);
+  const resolvedServiceRestartSec = resolveServiceRestartSec(serviceRestartSec);
   core.info(`Resolved systemd ExecStart: ${resolvedExecStart}`);
 
   const unitContent = renderUnit({
     SERVICE_NAME: serviceName,
+    SERVICE_TYPE: resolvedServiceType,
+    SERVICE_RESTART: resolvedServiceRestart,
+    SERVICE_RESTART_SEC: resolvedServiceRestartSec,
     WORKING_DIR: targetDir,
     USER: user,
     EXEC_START: resolvedExecStart,
@@ -215,7 +258,18 @@ export async function installSystemdUnit(
 export async function remoteSetup(
   opts: RemoteSetupOptions,
 ): Promise<RemoteSetupResult> {
-  const { host, user, privateKey, targetDir, serviceName, execStart, ipv6Only = false } = opts;
+  const {
+    host,
+    user,
+    privateKey,
+    targetDir,
+    serviceName,
+    execStart,
+    serviceType,
+    serviceRestart,
+    serviceRestartSec,
+    ipv6Only = false,
+  } = opts;
 
   const result: RemoteSetupResult = {
     unitInstalled: false,
@@ -238,6 +292,9 @@ export async function remoteSetup(
     targetDir,
     serviceName,
     execStart,
+    serviceType,
+    serviceRestart,
+    serviceRestartSec,
     ipv6Only,
   });
 

@@ -126,6 +126,14 @@ const BASE_INPUTS: ActionInputs = {
   targetDir: "/opt/app",
 };
 
+function makeService(overrides: Partial<NonNullable<ActionInputs["service"]>> = {}) {
+  return {
+    name: "myapp",
+    execStart: "/usr/bin/node /opt/app/server.js",
+    ...overrides,
+  };
+}
+
 /** Build inputs with overrides. */
 function withInputs(overrides: Partial<ActionInputs>): ActionInputs {
   return { ...BASE_INPUTS, ...overrides };
@@ -256,24 +264,28 @@ describe("activeStages", () => {
     expect(stages).toContain(STAGES.podman);
   });
 
-  it("excludes systemd when containerImage is set (even with serviceName)", () => {
+  it("excludes systemd when containerImage is set (even with service config)", () => {
     const stages = activeStages(
-      withInputs({ containerImage: "docker.io/myapp:latest", serviceName: "myapp" }),
+      withInputs({
+        containerImage: "docker.io/myapp:latest",
+        serviceName: "myapp",
+        service: makeService(),
+      }),
     );
 
     expect(stages).toContain(STAGES.podman);
     expect(stages).not.toContain(STAGES.systemd);
   });
 
-  it("includes systemd when serviceName is set and no containerImage", () => {
-    const stages = activeStages(withInputs({ serviceName: "myapp" }));
+  it("includes systemd when service.name is set and no containerImage", () => {
+    const stages = activeStages(withInputs({ serviceName: "myapp", service: makeService() }));
 
     expect(stages).toContain(STAGES.systemd);
     expect(stages).not.toContain(STAGES.podman);
   });
 
-  it("excludes systemd when serviceName is empty and no containerImage", () => {
-    const stages = activeStages(withInputs({ serviceName: "" }));
+  it("excludes systemd when service config is absent and no containerImage", () => {
+    const stages = activeStages(withInputs({ serviceName: "myapp", service: undefined }));
 
     expect(stages).not.toContain(STAGES.systemd);
   });
@@ -315,6 +327,7 @@ describe("activeStages", () => {
     const stages = activeStages(
       withInputs({
         serviceName: "myapp",
+        service: makeService(),
         haproxyCfg: "/etc/haproxy/haproxy.cfg",
         firewallEnabled: true,
       }),
@@ -349,10 +362,10 @@ describe("deployPipeline — stage ordering", () => {
     ]);
   });
 
-  it("calls systemd after rsyncDeploy when serviceName is set", async () => {
+  it("calls systemd after rsyncDeploy when service config is set", async () => {
     trackCallOrder();
 
-    await deployPipeline(withInputs({ serviceName: "myapp" }));
+    await deployPipeline(withInputs({ serviceName: "myapp", service: makeService() }));
 
     expect(callOrder).toEqual([
       STAGES.installPackages,
@@ -362,15 +375,19 @@ describe("deployPipeline — stage ordering", () => {
     ]);
   });
 
-  it("does not call installSystemdUnit when serviceName is empty", async () => {
-    await deployPipeline(BASE_INPUTS);
+  it("does not call installSystemdUnit when service config is absent", async () => {
+    await deployPipeline(withInputs({ serviceName: "myapp", service: undefined }));
 
     expect(installSystemdUnit).not.toHaveBeenCalled();
   });
 
   it("does not call installSystemdUnit when containerImage is present", async () => {
     await deployPipeline(
-      withInputs({ containerImage: "docker.io/myapp:latest", serviceName: "myapp" }),
+      withInputs({
+        containerImage: "docker.io/myapp:latest",
+        serviceName: "myapp",
+        service: makeService(),
+      }),
     );
 
     expect(installSystemdUnit).not.toHaveBeenCalled();
@@ -703,7 +720,7 @@ describe("deployPipeline — error propagation", () => {
     );
 
     await expect(
-      deployPipeline(withInputs({ serviceName: "myapp" })),
+      deployPipeline(withInputs({ serviceName: "myapp", service: makeService() })),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_systemd: daemon-reload failed$/);
   });
 
@@ -904,8 +921,19 @@ describe("deployPipeline — stage arguments", () => {
     });
   });
 
-  it("passes correct options to installSystemdUnit", async () => {
-    await deployPipeline(withInputs({ serviceName: "myapp" }));
+  it("passes structured service options to installSystemdUnit", async () => {
+    await deployPipeline(
+      withInputs({
+        serviceName: "legacy-name",
+        service: makeService({
+          name: "myapp",
+          execStart: "/usr/bin/node /opt/app/server.js --port 3000",
+          type: "notify",
+          restart: "always",
+          restartSec: 9,
+        }),
+      }),
+    );
 
     expect(installSystemdUnit).toHaveBeenCalledWith({
       host: "1.2.3.4",
@@ -913,21 +941,26 @@ describe("deployPipeline — stage arguments", () => {
       privateKey: "PRIVATE_KEY",
       targetDir: "/opt/app",
       serviceName: "myapp",
+      execStart: "/usr/bin/node /opt/app/server.js --port 3000",
+      serviceType: "notify",
+      serviceRestart: "always",
+      serviceRestartSec: 9,
       ipv6Only: false,
     });
   });
 
-  it("forwards provided execStart to installSystemdUnit", async () => {
+  it("uses service.name for podman when structured service is present", async () => {
     await deployPipeline(
       withInputs({
-        serviceName: "myapp",
-        execStart: "/usr/bin/node /opt/app/server.js --port 3000",
+        containerImage: "docker.io/myapp:latest",
+        serviceName: "legacy-name",
+        service: makeService({ name: "structured-name" }),
       }),
     );
 
-    expect(installSystemdUnit).toHaveBeenCalledWith(
+    expect(deployPodman).toHaveBeenCalledWith(
       expect.objectContaining({
-        execStart: "/usr/bin/node /opt/app/server.js --port 3000",
+        serviceName: "structured-name",
       }),
     );
   });

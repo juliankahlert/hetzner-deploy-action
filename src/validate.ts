@@ -27,7 +27,7 @@ export const VALID_SERVICE_KEYS = new Set<string>([
   "working-directory",
 ]);
 
-export function mapKebabToCamel(raw: Record<string, unknown>): ServiceConfig {
+export function mapKebabToCamel(raw: Record<string, unknown>): Partial<ServiceConfig> {
   return {
     name: raw["name"] as string,
     execStart: raw["exec-start"] as string,
@@ -46,6 +46,9 @@ export interface ValidatableInputs {
   sourceDir: string;
   targetDir: string;
   serviceName: string;
+  serviceType: string;
+  serviceRestart: string;
+  serviceRestartSec: string;
   image: string;
   serverType: string;
   projectTag: string;
@@ -99,6 +102,29 @@ const rules: ValidationRule[] = [
     label: "service_name",
     pattern: /^[a-zA-Z0-9][a-zA-Z0-9._@-]{0,255}$/,
     hint: "Must start with alphanumeric; only letters, digits, dots, hyphens, underscores, @ (max 256 chars).",
+    optional: true,
+  },
+  {
+    field: "serviceType",
+    label: "service_type",
+    pattern: /^(simple|exec|forking|oneshot|notify)$/,
+    hint: 'Must be one of: simple, exec, forking, oneshot, notify.',
+    optional: true,
+  },
+  {
+    field: "serviceRestart",
+    label: "service_restart",
+    pattern:
+      /^(no|always|on-success|on-failure|on-abnormal|on-abort|on-watchdog)$/,
+    hint:
+      'Must be one of: no, always, on-success, on-failure, on-abnormal, on-abort, on-watchdog.',
+    optional: true,
+  },
+  {
+    field: "serviceRestartSec",
+    label: "service_restart_sec",
+    pattern: /^\d+$/,
+    hint: "Must be a non-negative integer.",
     optional: true,
   },
   {

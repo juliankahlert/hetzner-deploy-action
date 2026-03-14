@@ -16,6 +16,9 @@ const validInputs: ValidatableInputs = {
   sourceDir: ".",
   targetDir: "/opt/app",
   serviceName: "",
+  serviceType: "simple",
+  serviceRestart: "on-failure",
+  serviceRestartSec: "5",
   image: "ubuntu-24.04",
   serverType: "cx23",
   projectTag: "myproject",
@@ -403,6 +406,101 @@ describe("validateInputs — serviceName (optional)", () => {
     );
 
     expect(core.warning).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// serviceType (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — serviceType (optional)", () => {
+  it("accepts allowed systemd service types", () => {
+    for (const serviceType of [
+      "simple",
+      "exec",
+      "forking",
+      "oneshot",
+      "notify",
+    ]) {
+      expect(() =>
+        validateInputs(withOverride({ serviceType })),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows an empty string", () => {
+    expect(() =>
+      validateInputs(withOverride({ serviceType: "" })),
+    ).not.toThrow();
+  });
+
+  it("rejects unsupported service types", () => {
+    expect(() =>
+      validateInputs(withOverride({ serviceType: "idle" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// serviceRestart (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — serviceRestart (optional)", () => {
+  it("accepts allowed restart policies", () => {
+    for (const serviceRestart of [
+      "no",
+      "always",
+      "on-success",
+      "on-failure",
+      "on-abnormal",
+      "on-abort",
+      "on-watchdog",
+    ]) {
+      expect(() =>
+        validateInputs(withOverride({ serviceRestart })),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows an empty string", () => {
+    expect(() =>
+      validateInputs(withOverride({ serviceRestart: "" })),
+    ).not.toThrow();
+  });
+
+  it("rejects unsupported restart policies", () => {
+    expect(() =>
+      validateInputs(withOverride({ serviceRestart: "unless-stopped" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// serviceRestartSec (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — serviceRestartSec (optional)", () => {
+  it("accepts non-negative integers", () => {
+    for (const serviceRestartSec of ["0", "5", "30"]) {
+      expect(() =>
+        validateInputs(withOverride({ serviceRestartSec })),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows an empty string", () => {
+    expect(() =>
+      validateInputs(withOverride({ serviceRestartSec: "" })),
+    ).not.toThrow();
+  });
+
+  it("rejects negative integers", () => {
+    expect(() =>
+      validateInputs(withOverride({ serviceRestartSec: "-1" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects non-integer values", () => {
+    expect(() =>
+      validateInputs(withOverride({ serviceRestartSec: "1.5" })),
+    ).toThrow(/INPUT_VALIDATION_/);
   });
 });
 

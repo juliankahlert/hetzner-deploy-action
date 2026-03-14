@@ -3,12 +3,12 @@ Description={{SERVICE_NAME}}
 After=network.target
 
 [Service]
-Type=simple
+Type={{SERVICE_TYPE}}
 User={{USER}}
 WorkingDirectory={{WORKING_DIR}}
 ExecStart={{EXEC_START}}
-Restart=on-failure
-RestartSec=5
+Restart={{SERVICE_RESTART}}
+RestartSec={{SERVICE_RESTART_SEC}}
 StandardOutput=journal
 StandardError=journal
 

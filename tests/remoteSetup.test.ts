@@ -79,18 +79,26 @@ const FILE_TEMPLATE = [
   "After=network.target",
   "",
   "[Service]",
-  "Type=simple",
+  "Type={{SERVICE_TYPE}}",
   "User={{USER}}",
   "WorkingDirectory={{WORKING_DIR}}",
   "ExecStart={{EXEC_START}}",
-  "Restart=on-failure",
-  "RestartSec=5",
+  "Restart={{SERVICE_RESTART}}",
+  "RestartSec={{SERVICE_RESTART_SEC}}",
   "StandardOutput=journal",
   "StandardError=journal",
   "",
   "[Install]",
   "WantedBy=multi-user.target",
 ].join("\n");
+
+function uploadedUnitContent(callIndex: number): string {
+  const cmd = remoteCmd(callIndex);
+  const match = cmd.match(/<< 'UNIT_EOF'\n([\s\S]*)\nUNIT_EOF$/);
+
+  expect(match).not.toBeNull();
+  return match![1];
+}
 
 /** Extract the remote command (last SSH arg) from a given exec mock call. */
 function remoteCmd(callIndex: number): string {
@@ -161,40 +169,64 @@ describe("ensureTargetDir", () => {
 
 describe("installSystemdUnit", () => {
   describe("template rendering", () => {
-    it("reads and renders file-based template when it exists", async () => {
+    it("reads and renders file-based template with all seven placeholders", async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true as never);
       vi.mocked(fs.readFileSync).mockReturnValue(FILE_TEMPLATE as never);
 
-      await installSystemdUnit(UNIT_OPTS);
+      await installSystemdUnit({
+        ...UNIT_OPTS,
+        serviceType: "notify",
+        serviceRestart: "always",
+        serviceRestartSec: 15,
+      });
 
       expect(fs.readFileSync).toHaveBeenCalledOnce();
 
-      // File template has StandardOutput/StandardError markers
-      const cmd = remoteCmd(0);
-      expect(cmd).toContain("StandardOutput=journal");
-      expect(cmd).toContain("StandardError=journal");
-      // Placeholders substituted
-      expect(cmd).toContain("Description=myapp");
-      expect(cmd).toContain("User=deploy");
-      expect(cmd).toContain("WorkingDirectory=/opt/app");
-      expect(cmd).toContain("ExecStart=/usr/bin/node index.js");
+      const unitContent = uploadedUnitContent(0);
+      expect(unitContent).toContain("Description=myapp");
+      expect(unitContent).toContain("Type=notify");
+      expect(unitContent).toContain("User=deploy");
+      expect(unitContent).toContain("WorkingDirectory=/opt/app");
+      expect(unitContent).toContain("ExecStart=/usr/bin/node index.js");
+      expect(unitContent).toContain("Restart=always");
+      expect(unitContent).toContain("RestartSec=15");
+      expect(unitContent).toContain("StandardOutput=journal");
+      expect(unitContent).toContain("StandardError=journal");
     });
 
-    it("uses fallback template when file is missing", async () => {
+    it("uses fallback template with journal lines and matching placeholders", async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false as never);
+
+      await installSystemdUnit({
+        ...UNIT_OPTS,
+        serviceType: "exec",
+        serviceRestart: "always",
+        serviceRestartSec: "30s",
+      });
+
+      expect(fs.readFileSync).not.toHaveBeenCalled();
+
+      const unitContent = uploadedUnitContent(0);
+      expect(unitContent).toContain("Description=myapp");
+      expect(unitContent).toContain("Type=exec");
+      expect(unitContent).toContain("User=deploy");
+      expect(unitContent).toContain("WorkingDirectory=/opt/app");
+      expect(unitContent).toContain("ExecStart=/usr/bin/node index.js");
+      expect(unitContent).toContain("Restart=always");
+      expect(unitContent).toContain("RestartSec=30s");
+      expect(unitContent).toContain("StandardOutput=journal");
+      expect(unitContent).toContain("StandardError=journal");
+    });
+
+    it("applies simple/on-failure/5 defaults when service fields are omitted", async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false as never);
 
       await installSystemdUnit(UNIT_OPTS);
 
-      expect(fs.readFileSync).not.toHaveBeenCalled();
-
-      const cmd = remoteCmd(0);
-      // Fallback template lacks StandardOutput/StandardError
-      expect(cmd).not.toContain("StandardOutput=journal");
-      expect(cmd).not.toContain("StandardError=journal");
-      // Core substitutions still applied
-      expect(cmd).toContain("Description=myapp");
-      expect(cmd).toContain("User=deploy");
-      expect(cmd).toContain("ExecStart=/usr/bin/node index.js");
+      const unitContent = uploadedUnitContent(0);
+      expect(unitContent).toContain("Type=simple");
+      expect(unitContent).toContain("Restart=on-failure");
+      expect(unitContent).toContain("RestartSec=5");
     });
   });
 
