@@ -10,6 +10,7 @@ vi.mock("@actions/core", async () => {
 });
 
 vi.mock("node:fs", () => ({
+  existsSync: vi.fn(),
   readFileSync: vi.fn(),
 }));
 
@@ -93,6 +94,7 @@ function sshRemoteCmd(callIndex: number): string {
 beforeEach(() => {
   vi.resetAllMocks();
 
+  vi.mocked(fs.existsSync).mockReturnValue(true);
   vi.mocked(fs.readFileSync).mockReturnValue(CONFIG_CONTENT as never);
   vi.mocked(ssh.shellQuote).mockImplementation(
     (value: string) => `'${value.replace(/'/g, "'\\''")}'`,
@@ -222,13 +224,27 @@ describe("deployHaproxyBase", () => {
     expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
   });
 
-  it("wraps bundled template read failures with clear context", async () => {
+  it("falls back to the inline base config when the bundled template is missing", async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+
+    const result = await deployHaproxyBase(BASE_BASE_OPTS);
+
+    expect(result).toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+    expect(fs.readFileSync).not.toHaveBeenCalled();
+    expect(sshRemoteCmd(0)).toContain("log stdout format raw local0");
+  });
+
+  it("wraps non-missing bundled template read failures with clear context", async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockImplementation(() => {
-      throw new Error("ENOENT: missing bundled template");
+      throw new Error("EACCES: permission denied");
     });
 
     await expect(deployHaproxyBase(BASE_BASE_OPTS)).rejects.toThrow(
-      /HAPROXY_UPLOAD: failed to read bundled HAProxy base config: ENOENT: missing bundled template/,
+      /HAPROXY_UPLOAD: failed to read bundled HAProxy base config: EACCES: permission denied/,
     );
 
     expect(ssh.withKeyFile).not.toHaveBeenCalled();

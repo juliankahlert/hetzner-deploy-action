@@ -64,6 +64,22 @@ export interface HaproxyDeployResult {
 const ERR_UPLOAD = "HAPROXY_UPLOAD";
 const ERR_VALIDATE = "HAPROXY_VALIDATE";
 const ERR_RELOAD = "HAPROXY_RELOAD";
+const HAPROXY_BASE_FALLBACK = `global
+  daemon
+  log stdout format raw local0
+  maxconn 4096
+
+defaults
+  log global
+  mode http
+  option httplog
+  timeout http-request 10s
+  timeout connect 5s
+  timeout client 30s
+  timeout server 30s
+
+.include /etc/haproxy/conf.d/
+`;
 
 function readBundledHaproxyBase(): string {
   const templatePath = path.resolve(
@@ -73,6 +89,10 @@ function readBundledHaproxyBase(): string {
     "templates",
     "haproxy-base.cfg",
   );
+
+  if (!fs.existsSync(templatePath)) {
+    return HAPROXY_BASE_FALLBACK;
+  }
 
   try {
     return fs.readFileSync(templatePath, "utf-8");
