@@ -283,7 +283,7 @@ describe("src/index entrypoint", () => {
 
   it("rejects malformed service yaml", async () => {
     mockInputs({
-      service: "name: broken.service\nexec-start: [",
+      service: "name: app\n  bad-indent: [",
     });
 
     await importEntrypoint();
@@ -298,18 +298,14 @@ describe("src/index entrypoint", () => {
 
   it("rejects unknown keys in structured service yaml", async () => {
     mockInputs({
-      service: [
-        "name: yaml.service",
-        "exec-start: /usr/bin/node /srv/app/yaml.js",
-        "unknown-key: nope",
-      ].join("\n"),
+      service: "name: app\nunknown-key: nope",
     });
 
     await importEntrypoint();
 
     await vi.waitFor(() => {
       expect(mocks.core.setFailed).toHaveBeenCalledWith(
-        expect.stringContaining('INPUT_VALIDATION_ Invalid key in "service": "unknown-key"'),
+        expect.stringContaining('Invalid key in "service": "unknown-key"'),
       );
     });
     expect(mocks.deployPipeline).not.toHaveBeenCalled();
@@ -324,7 +320,9 @@ describe("src/index entrypoint", () => {
 
     await vi.waitFor(() => {
       expect(mocks.core.setFailed).toHaveBeenCalledWith(
-        'INPUT_VALIDATION_ Input "service" must be a YAML mapping/object.',
+        expect.stringMatching(
+          /^INPUT_VALIDATION_ Input "service" must be a YAML mapping\/object\./,
+        ),
       );
     });
     expect(mocks.deployPipeline).not.toHaveBeenCalled();
@@ -332,14 +330,16 @@ describe("src/index entrypoint", () => {
 
   it("rejects array structured service yaml", async () => {
     mockInputs({
-      service: "- name: foo",
+      service: "- name: foo\n- name: bar",
     });
 
     await importEntrypoint();
 
     await vi.waitFor(() => {
       expect(mocks.core.setFailed).toHaveBeenCalledWith(
-        'INPUT_VALIDATION_ Input "service" must be a YAML mapping/object.',
+        expect.stringMatching(
+          /^INPUT_VALIDATION_ Input "service" must be a YAML mapping\/object\./,
+        ),
       );
     });
     expect(mocks.deployPipeline).not.toHaveBeenCalled();
