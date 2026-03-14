@@ -40817,6 +40817,9 @@ function renderUnit(vars) {
     }
     return content;
 }
+function resolveExecStart(serviceName, execStart) {
+    return execStart ?? `/usr/bin/env bash -c 'echo "${serviceName} started"'`;
+}
 /* ------------------------------------------------------------------ */
 /*  Public helpers                                                    */
 /* ------------------------------------------------------------------ */
@@ -40849,11 +40852,13 @@ async function installSystemdUnit(opts) {
     const { host, user, privateKey, targetDir, serviceName, execStart, ipv6Only = false } = opts;
     const result = { unitInstalled: false, serviceRestarted: false };
     lib_core.info(`Installing systemd unit for "${serviceName}"…`);
+    const resolvedExecStart = resolveExecStart(serviceName, execStart);
+    lib_core.info(`Resolved systemd ExecStart: ${resolvedExecStart}`);
     const unitContent = renderUnit({
         SERVICE_NAME: serviceName,
         WORKING_DIR: targetDir,
         USER: user,
-        EXEC_START: execStart ?? `/usr/bin/env bash -c 'echo "${serviceName} started"'`,
+        EXEC_START: resolvedExecStart,
     });
     const unitPath = `/etc/systemd/system/${serviceName}.service`;
     await withKeyFile(privateKey, async (keyPath) => {
@@ -41244,12 +41249,23 @@ async function deployPodman(opts) {
 
 
 
+
 /* ------------------------------------------------------------------ */
 /*  Error-prefix constants                                            */
 /* ------------------------------------------------------------------ */
 const haproxy_ERR_UPLOAD = "HAPROXY_UPLOAD";
 const ERR_VALIDATE = "HAPROXY_VALIDATE";
 const ERR_RELOAD = "HAPROXY_RELOAD";
+function readBundledHaproxyBase() {
+    const templatePath = external_node_path_.resolve(__dirname, "..", "..", "templates", "haproxy-base.cfg");
+    try {
+        return external_node_fs_namespaceObject.readFileSync(templatePath, "utf-8");
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${haproxy_ERR_UPLOAD}: failed to read bundled HAProxy base config: ${msg}`);
+    }
+}
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
@@ -41315,6 +41331,53 @@ async function deployHaproxy(opts) {
     return result;
 }
 /**
+ * Deploy the bundled HAProxy base configuration to a remote host.
+ *
+ * This is intended for fragment-only workflows where the action manages the
+ * root `haproxy.cfg` and separate fragment deployments populate `conf.d`.
+ */
+async function deployHaproxyBase(opts) {
+    const { host, user, privateKey, ipv6Only = false } = opts;
+    const result = {
+        configUploaded: false,
+        serviceReloaded: false,
+    };
+    const remotePath = "/etc/haproxy/haproxy.cfg";
+    const configContent = readBundledHaproxyBase();
+    lib_core.info(`[${haproxy_ERR_UPLOAD}] Deploying bundled HAProxy base config to ${remotePath} for fragment-only mode.`);
+    await withKeyFile(privateKey, async (keyPath) => {
+        try {
+            await sshExec(keyPath, user, host, `sudo mkdir -p ${shellQuote("/etc/haproxy")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${configContent}\nHAPROXY_CFG_EOF`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${haproxy_ERR_UPLOAD}: ${msg}`);
+        }
+        result.configUploaded = true;
+        lib_core.info(`[${haproxy_ERR_UPLOAD}] HAProxy base configuration written to ${remotePath}.`);
+        lib_core.info(`[${ERR_VALIDATE}] Validating HAProxy configuration…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo haproxy -c -f ${shellQuote(remotePath)}`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_VALIDATE}: ${msg}`);
+        }
+        lib_core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
+        lib_core.info(`[${ERR_RELOAD}] Reloading haproxy service…`);
+        try {
+            await sshExec(keyPath, user, host, "sudo systemctl reload haproxy", ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_RELOAD}: ${msg}`);
+        }
+        result.serviceReloaded = true;
+        lib_core.info(`[${ERR_RELOAD}] haproxy service reloaded successfully.`);
+    });
+    return result;
+}
+/**
  * Deploy an HAProxy fragment to a remote host.
  *
  * Steps:
@@ -41330,7 +41393,8 @@ async function deployHaproxyFragment(opts) {
         serviceReloaded: false,
     };
     const remotePath = `/etc/haproxy/conf.d/${fragmentName}.cfg`;
-    const validatePath = "/etc/haproxy/haproxy.cfg";
+    const validateBasePath = "/etc/haproxy/haproxy.cfg";
+    const validateFragmentsPath = "/etc/haproxy/conf.d/";
     lib_core.info(`[${haproxy_ERR_UPLOAD}] Reading HAProxy fragment ${fragmentName} from ${fragmentPath}…`);
     let fragmentContent;
     try {
@@ -41353,7 +41417,7 @@ async function deployHaproxyFragment(opts) {
         lib_core.info(`[${haproxy_ERR_UPLOAD}] HAProxy fragment written to ${remotePath}.`);
         lib_core.info(`[${ERR_VALIDATE}] Validating HAProxy configuration after uploading fragment ${fragmentName}…`);
         try {
-            await sshExec(keyPath, user, host, `sudo haproxy -c -f ${shellQuote(validatePath)}`, ipv6Only);
+            await sshExec(keyPath, user, host, `sudo haproxy -c -f ${shellQuote(validateBasePath)} -f ${shellQuote(validateFragmentsPath)}`, ipv6Only);
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -41675,6 +41739,7 @@ async function deployPipeline(inputs) {
                         privateKey: inputs.sshPrivateKey,
                         targetDir: inputs.targetDir,
                         serviceName: inputs.serviceName,
+                        execStart: inputs.execStart,
                         ipv6Only: effectiveIpv6Only,
                     });
                     lib_core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);
@@ -41693,6 +41758,15 @@ async function deployPipeline(inputs) {
                         });
                     }
                     if (inputs.haproxyFragment) {
+                        if (!inputs.haproxyCfg) {
+                            lib_core.info("HAProxy fragment-only mode detected; deploying bundled base config before fragment deployment.");
+                            haproxyResult = await deployHaproxyBase({
+                                host: server.ip,
+                                user: inputs.sshUser,
+                                privateKey: inputs.sshPrivateKey,
+                                ipv6Only: effectiveIpv6Only,
+                            });
+                        }
                         if (!inputs.haproxyFragmentName) {
                             throw new Error("haproxy_fragment_name is required for haproxy fragment deployment");
                         }
@@ -41822,6 +41896,13 @@ const rules = [
         optional: true,
     },
     {
+        field: "execStart",
+        label: "exec_start",
+        pattern: /^(?=.*\S)[^\0\r\n]+$/u,
+        hint: "Must be a non-empty command string and may not contain null bytes or newlines.",
+        optional: true,
+    },
+    {
         field: "containerPort",
         label: "container_port",
         pattern: /^\d{1,5}(:\d{1,5})?$/,
@@ -41882,6 +41963,9 @@ function validateInputs(inputs) {
             throw new Error(`INPUT_VALIDATION_ Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`);
         }
     }
+    if (inputs.serviceName && !inputs.containerImage && !inputs.execStart) {
+        lib_core.warning('Input "service_name" was provided without "container_image" or "exec_start". Systemd will fall back to a placeholder ExecStart until you provide a real command source.');
+    }
     lib_core.info("Input validation passed.");
 }
 //# sourceMappingURL=validate.js.map
@@ -41891,12 +41975,14 @@ function validateInputs(inputs) {
 
 function parseInputs() {
     // Collect raw string values — defaults come from action.yml exclusively.
+    const execStart = lib_core.getInput("exec_start");
     const raw = {
         serverName: lib_core.getInput("server_name", { required: true }),
         sshUser: lib_core.getInput("ssh_user"),
         sourceDir: lib_core.getInput("source_dir"),
         targetDir: lib_core.getInput("target_dir"),
         serviceName: lib_core.getInput("service_name"),
+        ...(execStart ? { execStart } : {}),
         image: lib_core.getInput("image"),
         serverType: lib_core.getInput("server_type"),
         projectTag: lib_core.getInput("project_tag", { required: true }),
@@ -41922,6 +42008,7 @@ function parseInputs() {
         sshPrivateKey: lib_core.getInput("ssh_private_key", { required: true }),
         sshUser: raw.sshUser,
         serviceName: raw.serviceName,
+        execStart: raw.execStart || undefined,
         sourceDir: raw.sourceDir,
         targetDir: raw.targetDir,
         containerImage: raw.containerImage || undefined,
@@ -41953,6 +42040,7 @@ function logInputs(inputs) {
     lib_core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
     lib_core.info(`  ssh_user:     ${inputs.sshUser}`);
     lib_core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);
+    lib_core.info(`  exec_start:   ${inputs.execStart ? "(provided)" : "(not set)"}`);
     lib_core.info(`  source_dir:   ${inputs.sourceDir}`);
     lib_core.info(`  target_dir:   ${inputs.targetDir}`);
     lib_core.info(`  public_key:   ${inputs.publicKey ? "(provided)" : "(not set)"}`);
