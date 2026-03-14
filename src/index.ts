@@ -67,6 +67,7 @@ function maskSecrets(inputs: ActionInputs): void {
 
 function logInputs(inputs: ActionInputs): void {
   core.info("Resolved inputs:");
+  core.debug("Upload-only deploy bundle marker.");
   core.info(`  server_name:  ${inputs.serverName}`);
   core.info(`  project_tag:  ${inputs.projectTag}`);
   core.info(`  image:        ${inputs.image}`);
