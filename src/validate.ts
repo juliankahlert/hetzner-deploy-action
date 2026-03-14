@@ -1,5 +1,45 @@
 import * as core from "@actions/core";
 
+export interface ServiceConfig {
+  name: string;
+  execStart: string;
+  type?: "simple" | "exec" | "forking" | "oneshot" | "notify";
+  restart?:
+    | "no"
+    | "always"
+    | "on-success"
+    | "on-failure"
+    | "on-abnormal"
+    | "on-abort"
+    | "on-watchdog";
+  restartSec?: number;
+  user?: string;
+  workingDirectory?: string;
+}
+
+export const VALID_SERVICE_KEYS = new Set<string>([
+  "name",
+  "exec-start",
+  "type",
+  "restart",
+  "restart-sec",
+  "user",
+  "working-directory",
+]);
+
+export function mapKebabToCamel(raw: Record<string, unknown>): ServiceConfig {
+  return {
+    name: raw["name"] as string,
+    execStart: raw["exec-start"] as string,
+    type: raw["type"] as ServiceConfig["type"],
+    restart: raw["restart"] as ServiceConfig["restart"],
+    restartSec:
+      raw["restart-sec"] != null ? Number(raw["restart-sec"]) : undefined,
+    user: raw["user"] as string | undefined,
+    workingDirectory: raw["working-directory"] as string | undefined,
+  };
+}
+
 export interface ValidatableInputs {
   serverName: string;
   sshUser: string;
