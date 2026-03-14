@@ -2,7 +2,12 @@ import * as core from "@actions/core";
 import { createClient } from "./hetzner/client.js";
 import { ensureSshKey } from "./hetzner/sshKeys.js";
 import { findOrCreateServer } from "./hetzner/findOrCreateServer.js";
-import { ensureTargetDir, installSystemdUnit } from "./deploy/remoteSetup.js";
+import {
+  ensureServiceUser,
+  ensureTargetDir,
+  installSystemdUnit,
+  setTargetOwnership,
+} from "./deploy/remoteSetup.js";
 import { installPackages } from "./deploy/packageInstall.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { deployPodman } from "./deploy/podman.js";
@@ -255,11 +260,40 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           if (!inputs.service?.name) {
             throw new Error("service.name is required for systemd deployment");
           }
+          if (inputs.service.user) {
+            core.info(`  Ensuring service user "${inputs.service.user}"...`);
+            await ensureServiceUser({
+              host: server.ip,
+              user: inputs.sshUser,
+              privateKey: inputs.sshPrivateKey,
+              serviceUser: inputs.service.user,
+              ipv6Only: effectiveIpv6Only,
+            });
+            core.info(`  Service user "${inputs.service.user}" ready.`);
+
+            const serviceWorkingDirectory =
+              inputs.service.workingDirectory ?? inputs.targetDir;
+            core.info(
+              `  Resetting ownership for "${serviceWorkingDirectory}" to "${inputs.service.user}"...`,
+            );
+            await setTargetOwnership({
+              host: server.ip,
+              user: inputs.sshUser,
+              privateKey: inputs.sshPrivateKey,
+              serviceUser: inputs.service.user,
+              targetDir: serviceWorkingDirectory,
+              ipv6Only: effectiveIpv6Only,
+            });
+            core.info(`  Ownership reset for "${serviceWorkingDirectory}".`);
+          }
+          core.info(`  Installing systemd unit for "${inputs.service.name}"...`);
           setupResult = await installSystemdUnit({
             host: server.ip,
             user: inputs.sshUser,
             privateKey: inputs.sshPrivateKey,
             targetDir: inputs.targetDir,
+            serviceUser: inputs.service.user,
+            serviceWorkingDirectory: inputs.service.workingDirectory,
             serviceName: inputs.service.name,
             execStart: inputs.service.execStart,
             serviceType: inputs.service.type,
@@ -267,6 +301,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
             serviceRestartSec: inputs.service.restartSec,
             ipv6Only: effectiveIpv6Only,
           });
+          core.info(`  Systemd unit "${inputs.service.name}" installed.`);
           core.info(`Service unit "${inputs.service.name}" installed and restarted.`);
           break;
 

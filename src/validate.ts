@@ -71,6 +71,10 @@ interface ValidationRule {
   optional?: boolean;
 }
 
+const SERVICE_USERNAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$/;
+const SERVICE_WORKING_DIRECTORY_PATTERN =
+  /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$/;
+
 /** Allowlist patterns — each must match the entire value. */
 const rules: ValidationRule[] = [
   {
@@ -240,4 +244,28 @@ export function validateInputs(inputs: ValidatableInputs): void {
   }
 
   core.info("Input validation passed.");
+}
+
+export function validateServiceConfig(service?: Partial<ServiceConfig>): void {
+  if (!service) {
+    return;
+  }
+
+  if (
+    service.user !== undefined &&
+    !SERVICE_USERNAME_PATTERN.test(service.user)
+  ) {
+    throw new Error(
+      `INPUT_VALIDATION_ Invalid value for "service.user": ${JSON.stringify(service.user)}. Must be a valid Unix username (letters, digits, underscores, hyphens; max 32 chars).`,
+    );
+  }
+
+  if (
+    service.workingDirectory !== undefined &&
+    !SERVICE_WORKING_DIRECTORY_PATTERN.test(service.workingDirectory)
+  ) {
+    throw new Error(
+      `INPUT_VALIDATION_ Invalid value for "service.working-directory": ${JSON.stringify(service.workingDirectory)}. Must be an absolute path (starts with /) without ".." or special characters.`,
+    );
+  }
 }

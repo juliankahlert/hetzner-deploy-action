@@ -44704,6 +44704,32 @@ async function ensureTargetDir(opts) {
     await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, `sudo mkdir -p ${shellQuote(targetDir)}`, ipv6Only));
 }
 /**
+ * Ensure the remote service user exists.
+ *
+ * Creates a temporary SSH key file, runs an idempotent `id || useradd`
+ * command, and cleans up the key automatically.
+ */
+async function ensureServiceUser(opts) {
+    const { host, user, privateKey, serviceUser, ipv6Only = false } = opts;
+    lib_core.info(`Ensuring service user ${serviceUser} exists on ${host}…`);
+    await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, `id ${shellQuote(serviceUser)} 2>/dev/null || sudo useradd --system --no-create-home --shell /usr/sbin/nologin ${shellQuote(serviceUser)}`, ipv6Only));
+    lib_core.info(`Service user ${serviceUser} is ready.`);
+    return { serviceUserEnsured: true };
+}
+/**
+ * Reset target directory ownership to the requested service user.
+ *
+ * Creates a temporary SSH key file, runs `sudo chown -R`, and cleans up the
+ * key automatically.
+ */
+async function setTargetOwnership(opts) {
+    const { host, user, privateKey, serviceUser, targetDir, ipv6Only = false } = opts;
+    lib_core.info(`Resetting ownership for ${targetDir} to ${serviceUser}:${serviceUser} on ${host}…`);
+    await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, `sudo chown -R ${shellQuote(serviceUser)}:${shellQuote(serviceUser)} ${shellQuote(targetDir)}`, ipv6Only));
+    lib_core.info(`Ownership reset for ${targetDir}.`);
+    return { targetOwnershipReset: true };
+}
+/**
  * Render, upload, and activate a systemd service unit on the remote host.
  *
  * Steps:
@@ -44718,7 +44744,7 @@ async function ensureTargetDir(opts) {
  *          service restarted.
  */
 async function installSystemdUnit(opts) {
-    const { host, user, privateKey, targetDir, serviceName, execStart, serviceType, serviceRestart, serviceRestartSec, ipv6Only = false, } = opts;
+    const { host, user, privateKey, targetDir, serviceUser, serviceWorkingDirectory, serviceName, execStart, serviceType, serviceRestart, serviceRestartSec, ipv6Only = false, } = opts;
     const result = { unitInstalled: false, serviceRestarted: false };
     lib_core.info(`Installing systemd unit for "${serviceName}"…`);
     const resolvedExecStart = resolveExecStart(serviceName, execStart);
@@ -44731,8 +44757,8 @@ async function installSystemdUnit(opts) {
         SERVICE_TYPE: resolvedServiceType,
         SERVICE_RESTART: resolvedServiceRestart,
         SERVICE_RESTART_SEC: resolvedServiceRestartSec,
-        WORKING_DIR: targetDir,
-        USER: user,
+        WORKING_DIR: serviceWorkingDirectory ?? targetDir,
+        USER: serviceUser ?? user,
         EXEC_START: resolvedExecStart,
     });
     const unitPath = `/etc/systemd/system/${serviceName}.service`;
@@ -45703,11 +45729,36 @@ async function deployPipeline(inputs) {
                     if (!inputs.service?.name) {
                         throw new Error("service.name is required for systemd deployment");
                     }
+                    if (inputs.service.user) {
+                        lib_core.info(`  Ensuring service user "${inputs.service.user}"...`);
+                        await ensureServiceUser({
+                            host: server.ip,
+                            user: inputs.sshUser,
+                            privateKey: inputs.sshPrivateKey,
+                            serviceUser: inputs.service.user,
+                            ipv6Only: effectiveIpv6Only,
+                        });
+                        lib_core.info(`  Service user "${inputs.service.user}" ready.`);
+                        const serviceWorkingDirectory = inputs.service.workingDirectory ?? inputs.targetDir;
+                        lib_core.info(`  Resetting ownership for "${serviceWorkingDirectory}" to "${inputs.service.user}"...`);
+                        await setTargetOwnership({
+                            host: server.ip,
+                            user: inputs.sshUser,
+                            privateKey: inputs.sshPrivateKey,
+                            serviceUser: inputs.service.user,
+                            targetDir: serviceWorkingDirectory,
+                            ipv6Only: effectiveIpv6Only,
+                        });
+                        lib_core.info(`  Ownership reset for "${serviceWorkingDirectory}".`);
+                    }
+                    lib_core.info(`  Installing systemd unit for "${inputs.service.name}"...`);
                     setupResult = await installSystemdUnit({
                         host: server.ip,
                         user: inputs.sshUser,
                         privateKey: inputs.sshPrivateKey,
                         targetDir: inputs.targetDir,
+                        serviceUser: inputs.service.user,
+                        serviceWorkingDirectory: inputs.service.workingDirectory,
                         serviceName: inputs.service.name,
                         execStart: inputs.service.execStart,
                         serviceType: inputs.service.type,
@@ -45715,6 +45766,7 @@ async function deployPipeline(inputs) {
                         serviceRestartSec: inputs.service.restartSec,
                         ipv6Only: effectiveIpv6Only,
                     });
+                    lib_core.info(`  Systemd unit "${inputs.service.name}" installed.`);
                     lib_core.info(`Service unit "${inputs.service.name}" installed and restarted.`);
                     break;
                 case STAGES.haproxy:
@@ -45830,6 +45882,8 @@ function mapKebabToCamel(raw) {
         workingDirectory: raw["working-directory"],
     };
 }
+const SERVICE_USERNAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$/;
+const SERVICE_WORKING_DIRECTORY_PATTERN = /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$/;
 /** Allowlist patterns — each must match the entire value. */
 const rules = [
     {
@@ -45988,6 +46042,19 @@ function validateInputs(inputs) {
     }
     lib_core.info("Input validation passed.");
 }
+function validateServiceConfig(service) {
+    if (!service) {
+        return;
+    }
+    if (service.user !== undefined &&
+        !SERVICE_USERNAME_PATTERN.test(service.user)) {
+        throw new Error(`INPUT_VALIDATION_ Invalid value for "service.user": ${JSON.stringify(service.user)}. Must be a valid Unix username (letters, digits, underscores, hyphens; max 32 chars).`);
+    }
+    if (service.workingDirectory !== undefined &&
+        !SERVICE_WORKING_DIRECTORY_PATTERN.test(service.workingDirectory)) {
+        throw new Error(`INPUT_VALIDATION_ Invalid value for "service.working-directory": ${JSON.stringify(service.workingDirectory)}. Must be an absolute path (starts with /) without ".." or special characters.`);
+    }
+}
 //# sourceMappingURL=validate.js.map
 ;// CONCATENATED MODULE: ./lib/index.js
 
@@ -46060,6 +46127,7 @@ function parseInputs() {
     const serviceRestartSec = lib_core.getInput("service_restart_sec");
     const serviceYaml = lib_core.getInput("service");
     const parsedService = parseServiceInput(serviceYaml);
+    validateServiceConfig(parsedService);
     const validatedServiceName = parsedService?.name ?? flatServiceName;
     const validatedExecStart = parsedService?.execStart ?? execStart;
     const raw = {

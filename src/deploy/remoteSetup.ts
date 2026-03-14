@@ -55,6 +55,10 @@ export interface InstallSystemdUnitOptions {
   privateKey: string;
   /** Working directory for the service (ExecStart cwd). */
   targetDir: string;
+  /** Optional systemd User= override for the service unit. */
+  serviceUser?: string;
+  /** Optional systemd WorkingDirectory= override for the service unit. */
+  serviceWorkingDirectory?: string;
   /** systemd service name (without `.service` suffix). */
   serviceName: string;
   /** Command that systemd ExecStart= should invoke. Defaults to a no-op placeholder. */
@@ -75,6 +79,48 @@ export interface RemoteSetupResult {
   unitInstalled: boolean;
   /** Whether the service was restarted. */
   serviceRestarted: boolean;
+}
+
+/** Options for ensuring a service user exists on the remote host. */
+export interface EnsureServiceUserOptions {
+  /** Server IP or hostname. */
+  host: string;
+  /** SSH user (e.g. "root"). */
+  user: string;
+  /** SSH private key content. */
+  privateKey: string;
+  /** System user to create when missing. */
+  serviceUser: string;
+  /** When true the host is an IPv6 address — forces ssh to use `-6`. */
+  ipv6Only?: boolean;
+}
+
+/** Result returned after ensuring a service user exists. */
+export interface EnsureServiceUserResult {
+  /** Whether the service user exists after the helper completes. */
+  serviceUserEnsured: boolean;
+}
+
+/** Options for resetting deployment target ownership on the remote host. */
+export interface SetTargetOwnershipOptions {
+  /** Server IP or hostname. */
+  host: string;
+  /** SSH user (e.g. "root"). */
+  user: string;
+  /** SSH private key content. */
+  privateKey: string;
+  /** System user that should own the target directory. */
+  serviceUser: string;
+  /** Absolute path on remote whose ownership should be reset. */
+  targetDir: string;
+  /** When true the host is an IPv6 address — forces ssh to use `-6`. */
+  ipv6Only?: boolean;
+}
+
+/** Result returned after resetting target directory ownership. */
+export interface SetTargetOwnershipResult {
+  /** Whether target ownership was reset successfully. */
+  targetOwnershipReset: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -154,6 +200,58 @@ export async function ensureTargetDir(
 }
 
 /**
+ * Ensure the remote service user exists.
+ *
+ * Creates a temporary SSH key file, runs an idempotent `id || useradd`
+ * command, and cleans up the key automatically.
+ */
+export async function ensureServiceUser(
+  opts: EnsureServiceUserOptions,
+): Promise<EnsureServiceUserResult> {
+  const { host, user, privateKey, serviceUser, ipv6Only = false } = opts;
+
+  core.info(`Ensuring service user ${serviceUser} exists on ${host}…`);
+  await withKeyFile(privateKey, (keyPath) =>
+    sshExec(
+      keyPath,
+      user,
+      host,
+      `id ${shellQuote(serviceUser)} 2>/dev/null || sudo useradd --system --no-create-home --shell /usr/sbin/nologin ${shellQuote(serviceUser)}`,
+      ipv6Only,
+    ),
+  );
+  core.info(`Service user ${serviceUser} is ready.`);
+
+  return { serviceUserEnsured: true };
+}
+
+/**
+ * Reset target directory ownership to the requested service user.
+ *
+ * Creates a temporary SSH key file, runs `sudo chown -R`, and cleans up the
+ * key automatically.
+ */
+export async function setTargetOwnership(
+  opts: SetTargetOwnershipOptions,
+): Promise<SetTargetOwnershipResult> {
+  const { host, user, privateKey, serviceUser, targetDir, ipv6Only = false } = opts;
+
+  core.info(`Resetting ownership for ${targetDir} to ${serviceUser}:${serviceUser} on ${host}…`);
+  await withKeyFile(privateKey, (keyPath) =>
+    sshExec(
+      keyPath,
+      user,
+      host,
+      `sudo chown -R ${shellQuote(serviceUser)}:${shellQuote(serviceUser)} ${shellQuote(targetDir)}`,
+      ipv6Only,
+    ),
+  );
+  core.info(`Ownership reset for ${targetDir}.`);
+
+  return { targetOwnershipReset: true };
+}
+
+/**
  * Render, upload, and activate a systemd service unit on the remote host.
  *
  * Steps:
@@ -175,6 +273,8 @@ export async function installSystemdUnit(
     user,
     privateKey,
     targetDir,
+    serviceUser,
+    serviceWorkingDirectory,
     serviceName,
     execStart,
     serviceType,
@@ -198,8 +298,8 @@ export async function installSystemdUnit(
     SERVICE_TYPE: resolvedServiceType,
     SERVICE_RESTART: resolvedServiceRestart,
     SERVICE_RESTART_SEC: resolvedServiceRestartSec,
-    WORKING_DIR: targetDir,
-    USER: user,
+    WORKING_DIR: serviceWorkingDirectory ?? targetDir,
+    USER: serviceUser ?? user,
     EXEC_START: resolvedExecStart,
   });
 

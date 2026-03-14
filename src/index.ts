@@ -5,6 +5,7 @@ import {
   mapKebabToCamel,
   VALID_SERVICE_KEYS,
   validateInputs,
+  validateServiceConfig,
   type ServiceConfig,
   type ValidatableInputs,
 } from "./validate.js";
@@ -99,6 +100,7 @@ function parseInputs(): ActionInputs {
   const serviceYaml = core.getInput("service");
 
   const parsedService = parseServiceInput(serviceYaml);
+  validateServiceConfig(parsedService);
 
   const validatedServiceName = parsedService?.name ?? flatServiceName;
   const validatedExecStart = parsedService?.execStart ?? execStart;

@@ -45,9 +45,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
+  ensureServiceUser,
   ensureTargetDir,
   installSystemdUnit,
   remoteSetup,
+  setTargetOwnership,
 } from "../src/deploy/remoteSetup";
 
 // ---------------------------------------------------------------------------
@@ -164,7 +166,54 @@ describe("ensureTargetDir", () => {
 });
 
 // ===========================================================================
-// 2 & 3. installSystemdUnit — template branches, upload, daemon-reload, etc.
+// 2. ensureServiceUser / setTargetOwnership
+// ===========================================================================
+
+describe("remote setup helpers", () => {
+  it("ensureServiceUser runs idempotent ssh command and returns success flag", async () => {
+    const result = await ensureServiceUser({
+      ...BASE_OPTS,
+      serviceUser: "deploy",
+    });
+
+    expect(exec.exec).toHaveBeenCalledOnce();
+    expect(remoteCmd(0)).toBe(
+      "id 'deploy' 2>/dev/null || sudo useradd --system --no-create-home --shell /usr/sbin/nologin 'deploy'",
+    );
+    expect(result).toEqual({ serviceUserEnsured: true });
+
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("Ensuring service user deploy exists on 1.2.3.4"),
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("Service user deploy is ready."),
+    );
+  });
+
+  it("setTargetOwnership runs quoted chown command and returns success flag", async () => {
+    const result = await setTargetOwnership({
+      ...BASE_OPTS,
+      serviceUser: "deploy",
+      targetDir: "/opt/it's here",
+    });
+
+    expect(exec.exec).toHaveBeenCalledOnce();
+    expect(remoteCmd(0)).toBe(
+      "sudo chown -R 'deploy':'deploy' '/opt/it'\\''s here'",
+    );
+    expect(result).toEqual({ targetOwnershipReset: true });
+
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("Resetting ownership for /opt/it's here to deploy:deploy on 1.2.3.4"),
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("Ownership reset for /opt/it's here."),
+    );
+  });
+});
+
+// ===========================================================================
+// 3 & 4. installSystemdUnit — template branches, upload, daemon-reload, etc.
 // ===========================================================================
 
 describe("installSystemdUnit", () => {
@@ -280,7 +329,7 @@ describe("installSystemdUnit", () => {
 });
 
 // ===========================================================================
-// 4 & 5. remoteSetup
+// 5 & 6. remoteSetup
 // ===========================================================================
 
 describe("remoteSetup", () => {
@@ -330,7 +379,7 @@ describe("remoteSetup", () => {
 });
 
 // ===========================================================================
-// 6. IPv6 handling
+// 7. IPv6 handling
 // ===========================================================================
 
 describe("IPv6 handling", () => {
@@ -397,7 +446,7 @@ describe("IPv6 handling", () => {
 });
 
 // ===========================================================================
-// 7. Key file cleanup (finally behaviour)
+// 8. Key file cleanup (finally behaviour)
 // ===========================================================================
 
 describe("key file cleanup", () => {

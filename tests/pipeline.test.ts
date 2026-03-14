@@ -32,8 +32,10 @@ vi.mock("../src/hetzner/findOrCreateServer.js", () => ({
 
 // Deploy modules — mock at module boundary
 vi.mock("../src/deploy/remoteSetup.js", () => ({
+  ensureServiceUser: vi.fn(),
   ensureTargetDir: vi.fn(),
   installSystemdUnit: vi.fn(),
+  setTargetOwnership: vi.fn(),
 }));
 
 vi.mock("../src/deploy/packageInstall.js", () => ({
@@ -73,7 +75,12 @@ import { existsSync } from "node:fs";
 import { createClient } from "../src/hetzner/client.js";
 import { ensureSshKey } from "../src/hetzner/sshKeys.js";
 import { findOrCreateServer } from "../src/hetzner/findOrCreateServer.js";
-import { ensureTargetDir, installSystemdUnit } from "../src/deploy/remoteSetup.js";
+import {
+  ensureServiceUser,
+  ensureTargetDir,
+  installSystemdUnit,
+  setTargetOwnership,
+} from "../src/deploy/remoteSetup.js";
 import { installPackages } from "../src/deploy/packageInstall.js";
 import { rsyncDeploy } from "../src/deploy/rsync.js";
 import { deployPodman } from "../src/deploy/podman.js";
@@ -190,8 +197,10 @@ beforeEach(() => {
 
   // Default deploy mocks — all stages succeed
   vi.mocked(installPackages).mockResolvedValue(undefined);
+  vi.mocked(ensureServiceUser).mockResolvedValue({ serviceUserEnsured: true });
   vi.mocked(ensureTargetDir).mockResolvedValue(undefined);
   vi.mocked(rsyncDeploy).mockResolvedValue(undefined);
+  vi.mocked(setTargetOwnership).mockResolvedValue({ targetOwnershipReset: true });
   vi.mocked(deployPodman).mockResolvedValue({
     quadletUploaded: true,
     serviceRestarted: true,
@@ -373,6 +382,58 @@ describe("deployPipeline — stage ordering", () => {
       STAGES.rsyncDeploy,
       STAGES.systemd,
     ]);
+  });
+
+  it("ensures service user ownership before installing systemd when service.user is present", async () => {
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        service: makeService({
+          user: "svc-myapp",
+          workingDirectory: "/srv/myapp/current",
+        }),
+      }),
+    );
+
+    const ensureUserCall = vi.mocked(ensureServiceUser).mock.invocationCallOrder[0];
+    const setOwnershipCall = vi.mocked(setTargetOwnership).mock.invocationCallOrder[0];
+    const installUnitCall = vi.mocked(installSystemdUnit).mock.invocationCallOrder[0];
+
+    expect(ensureServiceUser).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      serviceUser: "svc-myapp",
+      ipv6Only: false,
+    });
+    expect(setTargetOwnership).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      serviceUser: "svc-myapp",
+      targetDir: "/srv/myapp/current",
+      ipv6Only: false,
+    });
+    expect(ensureUserCall).toBeLessThan(setOwnershipCall);
+    expect(setOwnershipCall).toBeLessThan(installUnitCall);
+  });
+
+  it("falls back to targetDir for ownership when service workingDirectory is absent", async () => {
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        service: makeService({ user: "svc-myapp", workingDirectory: undefined }),
+      }),
+    );
+
+    expect(setTargetOwnership).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      serviceUser: "svc-myapp",
+      targetDir: "/opt/app",
+      ipv6Only: false,
+    });
   });
 
   it("does not call installSystemdUnit when service config is absent", async () => {
@@ -931,6 +992,8 @@ describe("deployPipeline — stage arguments", () => {
           type: "notify",
           restart: "always",
           restartSec: 9,
+          user: "svc-myapp",
+          workingDirectory: "/srv/myapp/current",
         }),
       }),
     );
@@ -940,6 +1003,8 @@ describe("deployPipeline — stage arguments", () => {
       user: "deploy",
       privateKey: "PRIVATE_KEY",
       targetDir: "/opt/app",
+      serviceUser: "svc-myapp",
+      serviceWorkingDirectory: "/srv/myapp/current",
       serviceName: "myapp",
       execStart: "/usr/bin/node /opt/app/server.js --port 3000",
       serviceType: "notify",

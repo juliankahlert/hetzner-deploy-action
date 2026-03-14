@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   },
   deployPipeline: vi.fn<(inputs: unknown) => Promise<void>>(),
   validateInputs: vi.fn<(inputs: unknown) => void>(),
+  validateServiceConfig: vi.fn<(service: unknown) => void>(),
 }));
 
 vi.mock("@actions/core", () => mocks.core);
@@ -42,6 +43,7 @@ vi.mock("../src/validate.js", () => ({
     workingDirectory: raw["working-directory"] as string | undefined,
   }),
   validateInputs: mocks.validateInputs,
+  validateServiceConfig: mocks.validateServiceConfig,
 }));
 
 const REQUIRED_INPUTS = {
@@ -72,6 +74,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.deployPipeline.mockResolvedValue(undefined);
   mocks.validateInputs.mockImplementation(() => {});
+  mocks.validateServiceConfig.mockImplementation(() => {});
   mockInputs();
 });
 
@@ -100,6 +103,8 @@ describe("src/index entrypoint", () => {
 
     await importEntrypoint();
 
+    expect(mocks.validateServiceConfig).toHaveBeenCalledWith(undefined);
+    expect(mocks.validateServiceConfig).toHaveBeenCalledTimes(1);
     expect(mocks.validateInputs).toHaveBeenCalledWith({
       containerPort: "8080:80",
       containerImage: "ghcr.io/acme/app:1.2.3",
@@ -172,6 +177,7 @@ describe("src/index entrypoint", () => {
   it("uses empty-input fallbacks for optional values", async () => {
     await importEntrypoint();
 
+    expect(mocks.validateServiceConfig).toHaveBeenCalledWith(undefined);
     expect(mocks.deployPipeline).toHaveBeenCalledWith({
       containerImage: undefined,
       containerPort: undefined,
@@ -214,6 +220,7 @@ describe("src/index entrypoint", () => {
 
     await importEntrypoint();
 
+    expect(mocks.validateServiceConfig).toHaveBeenCalledWith(undefined);
     expect(mocks.validateInputs).toHaveBeenCalledWith(
       expect.objectContaining({
         serviceName: "demo.service",
@@ -256,6 +263,15 @@ describe("src/index entrypoint", () => {
 
     await importEntrypoint();
 
+    expect(mocks.validateServiceConfig).toHaveBeenCalledWith({
+      name: "yaml.service",
+      execStart: "/usr/bin/node /srv/app/yaml.js",
+      type: "notify",
+      restart: "always",
+      restartSec: 11,
+      user: undefined,
+      workingDirectory: undefined,
+    });
     expect(mocks.validateInputs).toHaveBeenCalledWith(
       expect.objectContaining({
         serviceName: "yaml.service",

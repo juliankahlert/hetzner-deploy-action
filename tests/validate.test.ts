@@ -7,7 +7,11 @@ vi.mock("@actions/core", () => ({
 }));
 
 import * as core from "@actions/core";
-import { validateInputs, type ValidatableInputs } from "../src/validate";
+import {
+  validateInputs,
+  validateServiceConfig,
+  type ValidatableInputs,
+} from "../src/validate";
 
 /** A complete set of valid inputs used as baseline. */
 const validInputs: ValidatableInputs = {
@@ -670,6 +674,45 @@ describe("validateInputs — error messages", () => {
   it("prefixes pattern-mismatch errors with INPUT_VALIDATION_", () => {
     expect(() =>
       validateInputs(withOverride({ serverName: "; rm -rf /" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateServiceConfig
+// ---------------------------------------------------------------------------
+describe("validateServiceConfig", () => {
+  it("does not throw when service config is undefined", () => {
+    expect(() => validateServiceConfig(undefined)).not.toThrow();
+  });
+
+  it("accepts a valid service.user", () => {
+    expect(() =>
+      validateServiceConfig({ user: "app_user-1" }),
+    ).not.toThrow();
+  });
+
+  it("rejects service.user with invalid characters", () => {
+    expect(() =>
+      validateServiceConfig({ user: "app user" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects service.user starting with a digit", () => {
+    expect(() =>
+      validateServiceConfig({ user: "1appuser" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("accepts a valid service.workingDirectory", () => {
+    expect(() =>
+      validateServiceConfig({ workingDirectory: "/srv/my-app" }),
+    ).not.toThrow();
+  });
+
+  it("rejects a malformed service.workingDirectory", () => {
+    expect(() =>
+      validateServiceConfig({ workingDirectory: "srv/my-app" }),
     ).toThrow(/^INPUT_VALIDATION_/);
   });
 });
