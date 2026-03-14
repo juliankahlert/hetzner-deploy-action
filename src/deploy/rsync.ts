@@ -27,10 +27,10 @@ export interface RsyncOptions {
 /* ------------------------------------------------------------------ */
 
 /** Allowed characters in an absolute target directory path. */
-const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/\-]+$/;
+const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/-]+$/;
 
 /** Allowed characters in an SSH user name. */
-const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.\-]*$/;
+const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
 
 /**
  * Deploy a local directory to a remote server using rsync over SSH.

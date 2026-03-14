@@ -5,7 +5,9 @@
   "description": "Create or update a Hetzner Cloud server and deploy a directory to it.",
   "scripts": {
     "build": "tsc && ncc build lib/index.js -o dist",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
@@ -18,7 +20,10 @@
     "@vercel/ncc": "^0.38.3",
     "@vitest/coverage-v8": "^4.0.18",
     "typescript": "^5.7.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "typescript-eslint": "^8.0.0"
   },
   "license": "MIT",
   "overrides": {

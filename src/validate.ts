@@ -45,13 +45,13 @@ const rules: ValidationRule[] = [
   {
     field: "sourceDir",
     label: "source_dir",
-    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._/-]*)$/,
     hint: 'Must be "." or a relative/absolute path without ".." or special characters.',
   },
   {
     field: "targetDir",
     label: "target_dir",
-    pattern: /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*$/,
+    pattern: /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$/,
     hint: 'Must be an absolute path (starts with /) without ".." or special characters.',
   },
   {
@@ -88,7 +88,7 @@ const rules: ValidationRule[] = [
   {
     field: "containerImage",
     label: "container_image",
-    pattern: /^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$/,
+    pattern: /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/,
     hint: "Must be a valid container image reference (e.g. nginx:latest, ghcr.io/org/app:v1).",
     optional: true,
   },
@@ -109,14 +109,14 @@ const rules: ValidationRule[] = [
   {
     field: "haproxyCfg",
     label: "haproxy_cfg",
-    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._/-]*)$/,
     hint: 'Must be a relative or absolute path without ".." or special characters.',
     optional: true,
   },
   {
     field: "haproxyFragment",
     label: "haproxy_fragment",
-    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+    pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._/-]*)$/,
     hint: 'Must be "." or a relative/absolute path without ".." or special characters.',
     optional: true,
   },

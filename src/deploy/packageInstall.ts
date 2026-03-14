@@ -31,7 +31,7 @@ export const DEFAULT_PACKAGES: readonly string[] = ["podman", "haproxy"];
  * lowercase alphanumeric, dots, plus signs, or hyphens.  Minimum 2 chars.
  * @see https://www.debian.org/doc/debian-policy/ch-controlfields.html#source
  */
-const VALID_PKG_RE = /^[a-z0-9][a-z0-9.+\-]+$/;
+const VALID_PKG_RE = /^[a-z0-9][a-z0-9.+-]+$/;
 
 /* ------------------------------------------------------------------ */
 /*  Stage / error prefixes                                            */
