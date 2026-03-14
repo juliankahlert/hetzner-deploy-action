@@ -52,6 +52,12 @@ const FRAGMENT_NAME = "app";
 const REMOTE_FRAGMENT_DIR = "/etc/haproxy/conf.d";
 const REMOTE_FRAGMENT_PATH = `/etc/haproxy/conf.d/${FRAGMENT_NAME}.cfg`;
 const REMOTE_SERVICE_UNIT_PATH = "/etc/systemd/system/haproxy-frag.service";
+const EARLY_CONF_DIR_MKDIR_CMD = "sudo mkdir -p '/etc/haproxy/conf.d/'";
+const ENABLE_HAPROXY_FRAG_CMD = "sudo systemctl enable haproxy-frag";
+const START_OR_RELOAD_HAPROXY_FRAG_CMD =
+  "sudo systemctl is-active --quiet haproxy-frag && sudo systemctl reload haproxy-frag || sudo systemctl start haproxy-frag";
+const REMOTE_BASE_VALIDATE_CMD =
+  `sudo haproxy -c -f '${REMOTE_CFG_PATH}' -f '${REMOTE_FRAGMENT_DIR}/'`;
 const REMOTE_FRAGMENT_VALIDATE_CMD =
   `sudo haproxy -c -f '${REMOTE_CFG_PATH}' -f '${REMOTE_FRAGMENT_DIR}/'`;
 const STOP_DISABLE_HAPROXY_CMD =
@@ -156,7 +162,7 @@ describe("deployHaproxy", () => {
     expect(sshRemoteCmd(1)).toBe(
       `sudo haproxy -c -f '${REMOTE_CFG_PATH}'`,
     );
-    expect(sshRemoteCmd(2)).toBe("sudo systemctl reload haproxy-frag");
+    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 
   it("wraps upload failures with the HAPROXY_UPLOAD prefix", async () => {
@@ -200,7 +206,21 @@ describe("deployHaproxy", () => {
     expect(sshRemoteCmd(1)).toBe(
       `sudo haproxy -c -f '${REMOTE_CFG_PATH}'`,
     );
-    expect(sshRemoteCmd(2)).toBe("sudo systemctl reload haproxy-frag");
+    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+  });
+
+  it("uses start-or-reload so full-config deploy can recover when haproxy-frag is inactive", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("started haproxy-frag");
+
+    await expect(deployHaproxy(BASE_OPTS)).resolves.toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 
   it("wraps local config read failures with the HAPROXY_UPLOAD prefix", async () => {
@@ -244,6 +264,8 @@ describe("deployHaproxyBase", () => {
     );
     expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
     expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
+    expect(sshRemoteCmd(1)).toBe(REMOTE_BASE_VALIDATE_CMD);
+    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 
   it("falls back to the inline base config when the bundled template is missing", async () => {
@@ -296,7 +318,21 @@ describe("deployHaproxyFragment", () => {
     expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
     expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
     expect(sshRemoteCmd(1)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
-    expect(sshRemoteCmd(2)).toBe("sudo systemctl reload haproxy-frag");
+    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+  });
+
+  it("uses start-or-reload so fragment deploy works whether haproxy-frag is active or inactive", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("reloaded or started");
+
+    await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).resolves.toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 
   it("wraps fragment upload failures with clear fragment context", async () => {
@@ -312,7 +348,7 @@ describe("deployHaproxyFragment", () => {
 });
 
 describe("ensureHaproxyFragService", () => {
-  it("stops default haproxy best-effort, uploads the unit, reloads systemd, and enables haproxy-frag", async () => {
+  it("stops default haproxy best-effort, creates conf.d early, uploads the unit, reloads systemd, and enables haproxy-frag without starting it", async () => {
     await expect(ensureHaproxyFragService(BASE_BASE_OPTS)).resolves.toBeUndefined();
 
     expect(fs.readFileSync).toHaveBeenCalledWith(
@@ -324,15 +360,28 @@ describe("ensureHaproxyFragService", () => {
       expect.any(Function),
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(5);
     expect(sshRemoteCmd(0)).toBe(STOP_DISABLE_HAPROXY_CMD);
-    expect(sshRemoteCmd(1)).toContain(
+    expect(sshRemoteCmd(1)).toBe(EARLY_CONF_DIR_MKDIR_CMD);
+    expect(sshRemoteCmd(2)).toContain(
       `sudo mkdir -p '/etc/systemd/system' && sudo tee '${REMOTE_SERVICE_UNIT_PATH}' > /dev/null`,
     );
-    expect(sshRemoteCmd(1)).toContain("HAPROXY_SERVICE_EOF");
-    expect(sshRemoteCmd(1)).toContain(CONFIG_CONTENT);
-    expect(sshRemoteCmd(2)).toBe("sudo systemctl daemon-reload");
-    expect(sshRemoteCmd(3)).toBe("sudo systemctl enable --now haproxy-frag");
+    expect(sshRemoteCmd(2)).toContain("HAPROXY_SERVICE_EOF");
+    expect(sshRemoteCmd(2)).toContain(CONFIG_CONTENT);
+    expect(sshRemoteCmd(3)).toBe("sudo systemctl daemon-reload");
+    expect(sshRemoteCmd(4)).toBe(ENABLE_HAPROXY_FRAG_CMD);
+    expect(core.info).toHaveBeenCalledWith(
+      "[HAPROXY_SERVICE_INSTALL] Creating /etc/haproxy/conf.d/ early before uploading or enabling haproxy-frag…",
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      "[HAPROXY_SERVICE_INSTALL] /etc/haproxy/conf.d/ is ready before haproxy-frag enablement.",
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      "[HAPROXY_SERVICE_INSTALL] Enabling haproxy-frag service without starting it yet…",
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      "[HAPROXY_SERVICE_INSTALL] haproxy-frag service enabled successfully without starting it.",
+    );
   });
 
   it("falls back to the inline service unit when the bundled template is missing", async () => {
@@ -341,7 +390,7 @@ describe("ensureHaproxyFragService", () => {
     await expect(ensureHaproxyFragService(BASE_BASE_OPTS)).resolves.toBeUndefined();
 
     expect(fs.readFileSync).not.toHaveBeenCalled();
-    expect(sshRemoteCmd(1)).toContain(HAPROXY_FRAG_SERVICE_FALLBACK);
+    expect(sshRemoteCmd(2)).toContain(HAPROXY_FRAG_SERVICE_FALLBACK);
   });
 
   it("wraps bundled service template read failures with HAPROXY_SERVICE_INSTALL", async () => {
@@ -361,19 +410,22 @@ describe("ensureHaproxyFragService", () => {
   it("wraps service unit upload failures with HAPROXY_SERVICE_INSTALL", async () => {
     vi.mocked(ssh.sshExec)
       .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
       .mockRejectedValueOnce(new Error("tee failed"));
 
     await expect(ensureHaproxyFragService(BASE_BASE_OPTS)).rejects.toThrow(
       /HAPROXY_SERVICE_INSTALL: tee failed/,
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
     expect(sshRemoteCmd(0)).toBe(STOP_DISABLE_HAPROXY_CMD);
-    expect(sshRemoteCmd(1)).toContain(`'${REMOTE_SERVICE_UNIT_PATH}'`);
+    expect(sshRemoteCmd(1)).toBe(EARLY_CONF_DIR_MKDIR_CMD);
+    expect(sshRemoteCmd(2)).toContain(`'${REMOTE_SERVICE_UNIT_PATH}'`);
   });
 
   it("wraps daemon-reload failures with HAPROXY_SERVICE_INSTALL", async () => {
     vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
       .mockResolvedValueOnce("")
       .mockResolvedValueOnce("")
       .mockRejectedValueOnce(new Error("daemon-reload failed"));
@@ -382,12 +434,13 @@ describe("ensureHaproxyFragService", () => {
       /HAPROXY_SERVICE_INSTALL: daemon-reload failed/,
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
-    expect(sshRemoteCmd(2)).toBe("sudo systemctl daemon-reload");
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(4);
+    expect(sshRemoteCmd(3)).toBe("sudo systemctl daemon-reload");
   });
 
-  it("wraps enable/start failures with HAPROXY_SERVICE_INSTALL", async () => {
+  it("wraps enable-only failures with HAPROXY_SERVICE_INSTALL", async () => {
     vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
       .mockResolvedValueOnce("")
       .mockResolvedValueOnce("")
       .mockResolvedValueOnce("")
@@ -397,8 +450,8 @@ describe("ensureHaproxyFragService", () => {
       /HAPROXY_SERVICE_INSTALL: enable failed/,
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(4);
-    expect(sshRemoteCmd(3)).toBe("sudo systemctl enable --now haproxy-frag");
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(5);
+    expect(sshRemoteCmd(4)).toBe(ENABLE_HAPROXY_FRAG_CMD);
   });
 
   it("tolerates default haproxy stop/disable failures and still proceeds", async () => {
@@ -410,10 +463,25 @@ describe("ensureHaproxyFragService", () => {
 
     await expect(ensureHaproxyFragService(BASE_BASE_OPTS)).resolves.toBeUndefined();
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(5);
     expect(sshRemoteCmd(0)).toBe(STOP_DISABLE_HAPROXY_CMD);
-    expect(sshRemoteCmd(1)).toContain(`'${REMOTE_SERVICE_UNIT_PATH}'`);
-    expect(sshRemoteCmd(2)).toBe("sudo systemctl daemon-reload");
-    expect(sshRemoteCmd(3)).toBe("sudo systemctl enable --now haproxy-frag");
+    expect(sshRemoteCmd(1)).toBe(EARLY_CONF_DIR_MKDIR_CMD);
+    expect(sshRemoteCmd(2)).toContain(`'${REMOTE_SERVICE_UNIT_PATH}'`);
+    expect(sshRemoteCmd(3)).toBe("sudo systemctl daemon-reload");
+    expect(sshRemoteCmd(4)).toBe(ENABLE_HAPROXY_FRAG_CMD);
+  });
+
+  it("wraps early conf.d creation failures with HAPROXY_SERVICE_INSTALL", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("mkdir failed"));
+
+    await expect(ensureHaproxyFragService(BASE_BASE_OPTS)).rejects.toThrow(
+      /HAPROXY_SERVICE_INSTALL: mkdir failed/,
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(2);
+    expect(sshRemoteCmd(0)).toBe(STOP_DISABLE_HAPROXY_CMD);
+    expect(sshRemoteCmd(1)).toBe(EARLY_CONF_DIR_MKDIR_CMD);
   });
 });

@@ -77,6 +77,8 @@ const ERR_UPLOAD = "HAPROXY_UPLOAD";
 const ERR_VALIDATE = "HAPROXY_VALIDATE";
 const ERR_RELOAD = "HAPROXY_RELOAD";
 const ERR_SERVICE_INSTALL = "HAPROXY_SERVICE_INSTALL";
+const HAPROXY_START_OR_RELOAD_CMD =
+  "sudo systemctl is-active --quiet haproxy-frag && sudo systemctl reload haproxy-frag || sudo systemctl start haproxy-frag";
 const HAPROXY_BASE_FALLBACK = `global
   daemon
   log stdout format raw local0
@@ -222,13 +224,13 @@ export async function deployHaproxy(
     }
     core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
 
-    core.info(`[${ERR_RELOAD}] Reloading haproxy-frag service…`);
+    core.info(`[${ERR_RELOAD}] Reloading active haproxy-frag service or starting it if inactive…`);
     try {
       await sshExec(
         keyPath,
         user,
         host,
-        "sudo systemctl reload haproxy-frag",
+        HAPROXY_START_OR_RELOAD_CMD,
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -236,7 +238,7 @@ export async function deployHaproxy(
       throw new Error(`${ERR_RELOAD}: ${msg}`);
     }
     result.serviceReloaded = true;
-    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded successfully.`);
+    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded or started successfully.`);
   });
 
   return result;
@@ -259,6 +261,7 @@ export async function deployHaproxyBase(
   };
 
   const remotePath = "/etc/haproxy/haproxy.cfg";
+  const validateFragmentsPath = "/etc/haproxy/conf.d/";
   const configContent = readBundledHaproxyBase();
 
   core.info(
@@ -287,7 +290,7 @@ export async function deployHaproxyBase(
         keyPath,
         user,
         host,
-        `sudo haproxy -c -f ${shellQuote(remotePath)}`,
+        `sudo haproxy -c -f ${shellQuote(remotePath)} -f ${shellQuote(validateFragmentsPath)}`,
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -296,13 +299,13 @@ export async function deployHaproxyBase(
     }
     core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
 
-    core.info(`[${ERR_RELOAD}] Reloading haproxy-frag service…`);
+    core.info(`[${ERR_RELOAD}] Reloading active haproxy-frag service or starting it if inactive…`);
     try {
       await sshExec(
         keyPath,
         user,
         host,
-        "sudo systemctl reload haproxy-frag",
+        HAPROXY_START_OR_RELOAD_CMD,
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -310,7 +313,7 @@ export async function deployHaproxyBase(
       throw new Error(`${ERR_RELOAD}: ${msg}`);
     }
     result.serviceReloaded = true;
-    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded successfully.`);
+    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded or started successfully.`);
   });
 
   return result;
@@ -347,6 +350,28 @@ export async function ensureHaproxyFragService(
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
     }
+    core.info(
+      `[${ERR_SERVICE_INSTALL}] Default haproxy service stop/disable command completed before haproxy-frag install.`,
+    );
+
+    core.info(
+      `[${ERR_SERVICE_INSTALL}] Creating /etc/haproxy/conf.d/ early before uploading or enabling haproxy-frag…`,
+    );
+    try {
+      await sshExec(
+        keyPath,
+        user,
+        host,
+        `sudo mkdir -p ${shellQuote("/etc/haproxy/conf.d/")}`,
+        ipv6Only,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
+    }
+    core.info(
+      `[${ERR_SERVICE_INSTALL}] /etc/haproxy/conf.d/ is ready before haproxy-frag enablement.`,
+    );
 
     core.info(`[${ERR_SERVICE_INSTALL}] Uploading haproxy-frag service unit to ${remotePath}…`);
     try {
@@ -376,21 +401,24 @@ export async function ensureHaproxyFragService(
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
     }
+    core.info(`[${ERR_SERVICE_INSTALL}] systemd daemon-reload completed successfully.`);
 
-    core.info(`[${ERR_SERVICE_INSTALL}] Enabling and starting haproxy-frag service…`);
+    core.info(
+      `[${ERR_SERVICE_INSTALL}] Enabling haproxy-frag service without starting it yet…`,
+    );
     try {
       await sshExec(
         keyPath,
         user,
         host,
-        "sudo systemctl enable --now haproxy-frag",
+        "sudo systemctl enable haproxy-frag",
         ipv6Only,
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`${ERR_SERVICE_INSTALL}: ${msg}`);
     }
-    core.info(`[${ERR_SERVICE_INSTALL}] haproxy-frag service enabled successfully.`);
+    core.info(`[${ERR_SERVICE_INSTALL}] haproxy-frag service enabled successfully without starting it.`);
   });
 }
 
@@ -478,13 +506,13 @@ export async function deployHaproxyFragment(
     }
     core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
 
-    core.info(`[${ERR_RELOAD}] Reloading haproxy-frag service…`);
+    core.info(`[${ERR_RELOAD}] Reloading active haproxy-frag service or starting it if inactive…`);
     try {
       await sshExec(
         keyPath,
         user,
         host,
-        "sudo systemctl reload haproxy-frag",
+        HAPROXY_START_OR_RELOAD_CMD,
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -494,7 +522,7 @@ export async function deployHaproxyFragment(
       );
     }
     result.serviceReloaded = true;
-    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded successfully.`);
+    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded or started successfully.`);
   });
 
   return result;

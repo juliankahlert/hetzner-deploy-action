@@ -413,6 +413,23 @@ describe("deployPipeline — stage ordering", () => {
     expect(ensureCall).toBeLessThan(deployCfgCall);
     expect(ensureCall).toBeLessThan(deployFragmentCall);
   });
+
+  it("runs fragment-only haproxy flow in order: ensure service, deploy base, then deploy fragment", async () => {
+    await deployPipeline(
+      withInputs({
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    const ensureCall = vi.mocked(ensureHaproxyFragService).mock.invocationCallOrder[0];
+    const deployBaseCall = vi.mocked(deployHaproxyBase).mock.invocationCallOrder[0];
+    const deployFragmentCall = vi.mocked(deployHaproxyFragment).mock.invocationCallOrder[0];
+
+    expect(ensureCall).toBeLessThan(deployBaseCall);
+    expect(deployBaseCall).toBeLessThan(deployFragmentCall);
+    expect(deployHaproxy).not.toHaveBeenCalled();
+  });
 });
 
 // ===========================================================================
