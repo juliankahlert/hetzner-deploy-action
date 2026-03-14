@@ -78,7 +78,7 @@ defaults
   timeout client 30s
   timeout server 30s
 
-.include /etc/haproxy/conf.d/
+include /etc/haproxy/conf.d/
 `;
 
 function readBundledHaproxyBase(): string {

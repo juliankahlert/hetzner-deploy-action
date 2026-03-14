@@ -41270,7 +41270,7 @@ defaults
   timeout client 30s
   timeout server 30s
 
-.include /etc/haproxy/conf.d/
+include /etc/haproxy/conf.d/
 `;
 function readBundledHaproxyBase() {
     const templatePath = external_node_path_.resolve(__dirname, "..", "..", "templates", "haproxy-base.cfg");

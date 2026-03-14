@@ -188,7 +188,7 @@ jobs:
 
 ### Fragment-only HAProxy
 
-When you only set `haproxy_fragment` (without `haproxy_cfg`), the action automatically deploys the bundled base config to `/etc/haproxy/haproxy.cfg`. That base config includes `.include /etc/haproxy/conf.d/`, so your fragment is loaded by HAProxy without any extra setup.
+When you only set `haproxy_fragment` (without `haproxy_cfg`), the action automatically deploys the bundled base config to `/etc/haproxy/haproxy.cfg`. That base config includes `include /etc/haproxy/conf.d/`, so your fragment is loaded by HAProxy without any extra setup.
 
 Validation covers both paths: the action runs `haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/` to verify the base config and all fragments together before reloading the service.
 
