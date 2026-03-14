@@ -41284,7 +41284,7 @@ async function deployHaproxy(opts) {
     await withKeyFile(privateKey, async (keyPath) => {
         lib_core.info(`[${haproxy_ERR_UPLOAD}] Uploading HAProxy configuration to ${remotePath}…`);
         try {
-            await sshExec(keyPath, user, host, `sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${configContent}\nHAPROXY_CFG_EOF`, ipv6Only);
+            await sshExec(keyPath, user, host, `sudo mkdir -p ${shellQuote("/etc/haproxy")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${configContent}\nHAPROXY_CFG_EOF`, ipv6Only);
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -41343,7 +41343,7 @@ async function deployHaproxyFragment(opts) {
     await withKeyFile(privateKey, async (keyPath) => {
         lib_core.info(`[${haproxy_ERR_UPLOAD}] Uploading HAProxy fragment ${fragmentName} to ${remotePath}…`);
         try {
-            await sshExec(keyPath, user, host, `sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${fragmentContent}\nHAPROXY_CFG_EOF`, ipv6Only);
+            await sshExec(keyPath, user, host, `sudo mkdir -p ${shellQuote("/etc/haproxy/conf.d")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${fragmentContent}\nHAPROXY_CFG_EOF`, ipv6Only);
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

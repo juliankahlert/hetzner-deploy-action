@@ -37,8 +37,10 @@ import { deployHaproxy, deployHaproxyFragment } from "../src/deploy/haproxy";
 const FAKE_KEY_PATH = "/tmp/hda-key-XXXXXX/id";
 const CFG_PATH = "/workspace/haproxy.cfg";
 const FRAGMENT_PATH = "/workspace/fragments/app.cfg";
+const REMOTE_CFG_DIR = "/etc/haproxy";
 const REMOTE_CFG_PATH = "/etc/haproxy/haproxy.cfg";
 const FRAGMENT_NAME = "app";
+const REMOTE_FRAGMENT_DIR = "/etc/haproxy/conf.d";
 const REMOTE_FRAGMENT_PATH = `/etc/haproxy/conf.d/${FRAGMENT_NAME}.cfg`;
 
 const BASE_OPTS = {
@@ -109,7 +111,7 @@ describe("deployHaproxy", () => {
 
     expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
     expect(sshRemoteCmd(0)).toContain(
-      `sudo tee '${REMOTE_CFG_PATH}' > /dev/null`,
+      `sudo mkdir -p '${REMOTE_CFG_DIR}' && sudo tee '${REMOTE_CFG_PATH}' > /dev/null`,
     );
     expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
     expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
@@ -198,7 +200,7 @@ describe("deployHaproxyFragment", () => {
 
     expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
     expect(sshRemoteCmd(0)).toContain(
-      `sudo tee '${REMOTE_FRAGMENT_PATH}' > /dev/null`,
+      `sudo mkdir -p '${REMOTE_FRAGMENT_DIR}' && sudo tee '${REMOTE_FRAGMENT_PATH}' > /dev/null`,
     );
     expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
     expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);

@@ -97,7 +97,7 @@ export async function deployHaproxy(
         keyPath,
         user,
         host,
-        `sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${configContent}\nHAPROXY_CFG_EOF`,
+        `sudo mkdir -p ${shellQuote("/etc/haproxy")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${configContent}\nHAPROXY_CFG_EOF`,
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -194,7 +194,7 @@ export async function deployHaproxyFragment(
         keyPath,
         user,
         host,
-        `sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${fragmentContent}\nHAPROXY_CFG_EOF`,
+        `sudo mkdir -p ${shellQuote("/etc/haproxy/conf.d")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${fragmentContent}\nHAPROXY_CFG_EOF`,
         ipv6Only,
       );
     } catch (err: unknown) {
