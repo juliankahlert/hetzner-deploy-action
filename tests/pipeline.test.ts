@@ -194,7 +194,7 @@ beforeEach(() => {
   });
   vi.mocked(deployHaproxyBase).mockResolvedValue({
     configUploaded: true,
-    serviceReloaded: true,
+    serviceReloaded: false,
   });
   vi.mocked(deployHaproxyFragment).mockResolvedValue({
     configUploaded: true,
@@ -429,6 +429,87 @@ describe("deployPipeline — stage ordering", () => {
     expect(ensureCall).toBeLessThan(deployBaseCall);
     expect(deployBaseCall).toBeLessThan(deployFragmentCall);
     expect(deployHaproxy).not.toHaveBeenCalled();
+  });
+
+  it("tracks full fragment-only flow in callOrder", async () => {
+    trackCallOrder();
+    vi.mocked(ensureHaproxyFragService).mockImplementation(async () => {
+      callOrder.push("ensureHaproxyFragService");
+    });
+    vi.mocked(deployHaproxyBase).mockImplementation(async () => {
+      callOrder.push("deployHaproxyBase");
+      return { configUploaded: true, serviceReloaded: false };
+    });
+    vi.mocked(deployHaproxyFragment).mockImplementation(async () => {
+      callOrder.push("deployHaproxyFragment");
+      return { configUploaded: true, serviceReloaded: true };
+    });
+
+    await deployPipeline(
+      withInputs({
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(callOrder).toEqual([
+      STAGES.installPackages,
+      STAGES.ensureTargetDir,
+      STAGES.rsyncDeploy,
+      "ensureHaproxyFragService",
+      "deployHaproxyBase",
+      "deployHaproxyFragment",
+    ]);
+  });
+
+  it("uses fragment result for final haproxy reload summary in fragment-only mode", async () => {
+    vi.mocked(deployHaproxyBase).mockResolvedValueOnce({
+      configUploaded: true,
+      serviceReloaded: false,
+    });
+    vi.mocked(deployHaproxyFragment).mockResolvedValueOnce({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    await deployPipeline(
+      withInputs({
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(core.info).toHaveBeenCalledWith("  haproxy reloaded:  yes");
+    expect(core.info).not.toHaveBeenCalledWith("  haproxy reloaded:  no");
+  });
+
+  it("does not call deployHaproxy in fragment-only mode", async () => {
+    await deployPipeline(
+      withInputs({
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyBase).toHaveBeenCalledOnce();
+    expect(deployHaproxyFragment).toHaveBeenCalledOnce();
+  });
+
+  it("wraps fragment-only base deployment failures with DEPLOY_PIPELINE_haproxy prefix", async () => {
+    vi.mocked(deployHaproxyBase).mockRejectedValueOnce(new Error("base upload failed"));
+
+    await expect(
+      deployPipeline(
+        withInputs({
+          haproxyFragment: "/tmp/app.fragment.cfg",
+          haproxyFragmentName: "app",
+        }),
+      ),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: base upload failed$/);
+
+    expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyFragment).not.toHaveBeenCalled();
   });
 });
 
