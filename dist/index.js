@@ -40629,6 +40629,7 @@ const external_node_os_namespaceObject = require("node:os");
 
 
 
+
 /* ------------------------------------------------------------------ */
 /*  SSH constants                                                     */
 /* ------------------------------------------------------------------ */
@@ -40643,6 +40644,9 @@ const SSH_OPTIONS = [
     "-o",
     "ConnectTimeout=30",
 ];
+const SSH_READY_INITIAL_DELAY_S = 2;
+const SSH_READY_MAX_DELAY_S = 32;
+const SSH_READY_MAX_TOTAL_WAIT_S = 120;
 /* ------------------------------------------------------------------ */
 /*  Key-file management                                               */
 /* ------------------------------------------------------------------ */
@@ -40731,6 +40735,36 @@ async function sshExec(keyPath, user, host, remoteCmd, ipv6Only = false) {
         throw err;
     }
     return stdout.trim();
+}
+/**
+ * Wait until the remote host accepts SSH commands.
+ */
+async function waitForSsh(keyPath, user, host, ipv6Only = false) {
+    let attempt = 0;
+    let plannedWaitS = 0;
+    while (true) {
+        try {
+            const stdout = await sshExec(keyPath, user, host, "echo ok", ipv6Only);
+            if (stdout === "ok") {
+                return;
+            }
+            throw new Error(`Unexpected SSH probe output: ${stdout}`);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.toLowerCase().includes("permission denied")) {
+                throw err;
+            }
+            const delayS = Math.min(SSH_READY_INITIAL_DELAY_S * Math.pow(2, attempt), SSH_READY_MAX_DELAY_S);
+            if (plannedWaitS + delayS > SSH_READY_MAX_TOTAL_WAIT_S) {
+                throw err;
+            }
+            core.info(`SSH not ready yet, retrying in ${delayS}s: ${msg}`);
+            await new Promise((resolve) => setTimeout(resolve, delayS * 1000));
+            plannedWaitS += delayS;
+            attempt += 1;
+        }
+    }
 }
 /* ------------------------------------------------------------------ */
 /*  Shell quoting                                                     */

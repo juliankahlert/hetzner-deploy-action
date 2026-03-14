@@ -1,3 +1,4 @@
+import * as core from "@actions/core";
 import * as exec from "@actions/exec";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -18,6 +19,10 @@ export const SSH_OPTIONS: readonly string[] = [
   "-o",
   "ConnectTimeout=30",
 ];
+
+const SSH_READY_INITIAL_DELAY_S = 2;
+const SSH_READY_MAX_DELAY_S = 32;
+const SSH_READY_MAX_TOTAL_WAIT_S = 120;
 
 /* ------------------------------------------------------------------ */
 /*  Key-file management                                               */
@@ -126,6 +131,49 @@ export async function sshExec(
     throw err;
   }
   return stdout.trim();
+}
+
+/**
+ * Wait until the remote host accepts SSH commands.
+ */
+export async function waitForSsh(
+  keyPath: string,
+  user: string,
+  host: string,
+  ipv6Only = false,
+): Promise<void> {
+  let attempt = 0;
+  let plannedWaitS = 0;
+
+  while (true) {
+    try {
+      const stdout = await sshExec(keyPath, user, host, "echo ok", ipv6Only);
+      if (stdout === "ok") {
+        return;
+      }
+      throw new Error(`Unexpected SSH probe output: ${stdout}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+
+      if (msg.toLowerCase().includes("permission denied")) {
+        throw err;
+      }
+
+      const delayS = Math.min(
+        SSH_READY_INITIAL_DELAY_S * Math.pow(2, attempt),
+        SSH_READY_MAX_DELAY_S,
+      );
+
+      if (plannedWaitS + delayS > SSH_READY_MAX_TOTAL_WAIT_S) {
+        throw err;
+      }
+
+      core.info(`SSH not ready yet, retrying in ${delayS}s: ${msg}`);
+      await new Promise((resolve) => setTimeout(resolve, delayS * 1000));
+      plannedWaitS += delayS;
+      attempt += 1;
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */
