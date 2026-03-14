@@ -96,6 +96,7 @@ defaults
 const HAPROXY_FRAG_SERVICE_FALLBACK = `[Unit]
 Description=HAProxy fragment orchestration service
 After=network.target
+ConditionDirectoryNotEmpty=/etc/haproxy/conf.d
 
 [Service]
 Type=notify
