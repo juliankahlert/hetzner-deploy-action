@@ -102,6 +102,10 @@ function renderUnit(vars: Record<string, string>): string {
   return content;
 }
 
+function resolveExecStart(serviceName: string, execStart?: string): string {
+  return execStart ?? `/usr/bin/env bash -c 'echo "${serviceName} started"'`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Public helpers                                                    */
 /* ------------------------------------------------------------------ */
@@ -146,11 +150,14 @@ export async function installSystemdUnit(
 
   core.info(`Installing systemd unit for "${serviceName}"…`);
 
+  const resolvedExecStart = resolveExecStart(serviceName, execStart);
+  core.info(`Resolved systemd ExecStart: ${resolvedExecStart}`);
+
   const unitContent = renderUnit({
     SERVICE_NAME: serviceName,
     WORKING_DIR: targetDir,
     USER: user,
-    EXEC_START: execStart ?? `/usr/bin/env bash -c 'echo "${serviceName} started"'`,
+    EXEC_START: resolvedExecStart,
   });
 
   const unitPath = `/etc/systemd/system/${serviceName}.service`;

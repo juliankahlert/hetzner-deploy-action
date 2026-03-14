@@ -778,6 +778,21 @@ describe("deployPipeline — stage arguments", () => {
     });
   });
 
+  it("forwards provided execStart to installSystemdUnit", async () => {
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        execStart: "/usr/bin/node /opt/app/server.js --port 3000",
+      }),
+    );
+
+    expect(installSystemdUnit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        execStart: "/usr/bin/node /opt/app/server.js --port 3000",
+      }),
+    );
+  });
+
   it("passes correct options to deployPodman when containerImage is set", async () => {
     await deployPipeline(
       withInputs({

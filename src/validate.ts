@@ -11,6 +11,7 @@ export interface ValidatableInputs {
   projectTag: string;
   ipv6Only: string;
   containerImage: string;
+  execStart?: string;
   containerPort: string;
   haproxyCfg: string;
   haproxyFragment: string;
@@ -19,14 +20,16 @@ export interface ValidatableInputs {
   firewallExtraPorts: string;
 }
 
-/** Allowlist patterns — each must match the entire value. */
-const rules: {
+interface ValidationRule {
   field: keyof ValidatableInputs;
   label: string;
   pattern: RegExp;
   hint: string;
   optional?: boolean;
-}[] = [
+}
+
+/** Allowlist patterns — each must match the entire value. */
+const rules: ValidationRule[] = [
   {
     field: "serverName",
     label: "server_name",
@@ -87,6 +90,13 @@ const rules: {
     label: "container_image",
     pattern: /^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$/,
     hint: "Must be a valid container image reference (e.g. nginx:latest, ghcr.io/org/app:v1).",
+    optional: true,
+  },
+  {
+    field: "execStart",
+    label: "exec_start",
+    pattern: /^(?=.*\S)[^\0\r\n]+$/u,
+    hint: "Must be a non-empty command string and may not contain null bytes or newlines.",
     optional: true,
   },
   {
@@ -155,6 +165,12 @@ export function validateInputs(inputs: ValidatableInputs): void {
         `INPUT_VALIDATION_ Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`,
       );
     }
+  }
+
+  if (inputs.serviceName && !inputs.containerImage && !inputs.execStart) {
+    core.warning(
+      'Input "service_name" was provided without "container_image" or "exec_start". Systemd will fall back to a placeholder ExecStart until you provide a real command source.',
+    );
   }
 
   core.info("Input validation passed.");

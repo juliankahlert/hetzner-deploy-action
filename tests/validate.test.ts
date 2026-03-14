@@ -1,10 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 
 // Mock @actions/core before importing validate
 vi.mock("@actions/core", () => ({
   info: vi.fn(),
+  warning: vi.fn(),
 }));
 
+import * as core from "@actions/core";
 import { validateInputs, type ValidatableInputs } from "../src/validate";
 
 /** A complete set of valid inputs used as baseline. */
@@ -35,6 +37,10 @@ function withOverride(
 ): ValidatableInputs {
   return { ...validInputs, ...overrides };
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 // ---------------------------------------------------------------------------
 // Happy path
@@ -377,6 +383,54 @@ describe("validateInputs — serviceName (optional)", () => {
   it("rejects service name starting with dot", () => {
     expect(() =>
       validateInputs(withOverride({ serviceName: ".hidden" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("warns when serviceName is set without containerImage or execStart", () => {
+    validateInputs(withOverride({ serviceName: "myapp.service" }));
+
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining("placeholder ExecStart"),
+    );
+  });
+
+  it("does not warn when execStart is provided", () => {
+    validateInputs(
+      withOverride({
+        serviceName: "myapp.service",
+        execStart: "/usr/bin/env bash -lc 'echo ok'",
+      }),
+    );
+
+    expect(core.warning).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// execStart (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — execStart (optional)", () => {
+  it("accepts a non-empty single-line command", () => {
+    expect(() =>
+      validateInputs(withOverride({ execStart: "/usr/bin/node server.js --port 3000" })),
+    ).not.toThrow();
+  });
+
+  it("rejects an empty execStart", () => {
+    expect(() =>
+      validateInputs(withOverride({ execStart: "   " })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects execStart containing a null byte", () => {
+    expect(() =>
+      validateInputs(withOverride({ execStart: "node\u0000server.js" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects execStart containing a newline", () => {
+    expect(() =>
+      validateInputs(withOverride({ execStart: "node server.js\n--port 3000" })),
     ).toThrow(/INPUT_VALIDATION_/);
   });
 });

@@ -4,12 +4,15 @@ import { validateInputs, type ValidatableInputs } from "./validate.js";
 
 function parseInputs(): ActionInputs {
   // Collect raw string values — defaults come from action.yml exclusively.
-  const raw: ValidatableInputs = {
+  const execStart = core.getInput("exec_start");
+
+  const raw = {
     serverName: core.getInput("server_name", { required: true }),
     sshUser: core.getInput("ssh_user"),
     sourceDir: core.getInput("source_dir"),
     targetDir: core.getInput("target_dir"),
     serviceName: core.getInput("service_name"),
+    ...(execStart ? { execStart } : {}),
     image: core.getInput("image"),
     serverType: core.getInput("server_type"),
     projectTag: core.getInput("project_tag", { required: true }),
@@ -21,7 +24,7 @@ function parseInputs(): ActionInputs {
     haproxyFragmentName: core.getInput("haproxy_fragment_name"),
     firewallEnabled: core.getInput("firewall_enabled"),
     firewallExtraPorts: core.getInput("firewall_extra_ports"),
-  };
+  } satisfies ValidatableInputs;
 
   // Validate all non-secret inputs before any cloud API call.
   validateInputs(raw);
@@ -37,6 +40,7 @@ function parseInputs(): ActionInputs {
     sshPrivateKey: core.getInput("ssh_private_key", { required: true }),
     sshUser: raw.sshUser,
     serviceName: raw.serviceName,
+    execStart: raw.execStart || undefined,
     sourceDir: raw.sourceDir,
     targetDir: raw.targetDir,
     containerImage: raw.containerImage || undefined,
@@ -70,6 +74,7 @@ function logInputs(inputs: ActionInputs): void {
   core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
   core.info(`  ssh_user:     ${inputs.sshUser}`);
   core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);
+  core.info(`  exec_start:   ${inputs.execStart ? "(provided)" : "(not set)"}`);
   core.info(`  source_dir:   ${inputs.sourceDir}`);
   core.info(`  target_dir:   ${inputs.targetDir}`);
   core.info(`  public_key:   ${inputs.publicKey ? "(provided)" : "(not set)"}`);

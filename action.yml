@@ -39,6 +39,9 @@ inputs:
   service_name:
     description: Systemd service name to restart after deploy
     required: false
+  exec_start:
+    description: Custom systemd ExecStart= command to use for the service. When omitted, a placeholder command is used and a warning is emitted.
+    required: false
   source_dir:
     description: Directory in the workspace to deploy
     required: false

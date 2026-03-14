@@ -56,6 +56,8 @@ export interface ActionInputs {
   serviceName: string;
   sourceDir: string;
   targetDir: string;
+  /** Custom ExecStart command for the installed systemd unit. */
+  execStart?: string;
   /** Container image reference — enables the podman stage when set. */
   containerImage?: string;
   /** Container port or mapping passed to Podman Quadlet. */
@@ -248,6 +250,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
             privateKey: inputs.sshPrivateKey,
             targetDir: inputs.targetDir,
             serviceName: inputs.serviceName,
+            execStart: inputs.execStart,
             ipv6Only: effectiveIpv6Only,
           });
           core.info(`Service unit "${inputs.serviceName}" installed and restarted.`);

@@ -61,6 +61,7 @@ describe("src/index entrypoint", () => {
     mockInputs({
       container_image: "ghcr.io/acme/app:1.2.3",
       container_port: "8080:80",
+      exec_start: "/usr/bin/node /srv/app/server.js --port 8080",
       firewall_enabled: "true",
       firewall_extra_ports: "8080, 53/udp , , 443",
       haproxy_cfg: "/etc/haproxy/haproxy.cfg",
@@ -80,6 +81,7 @@ describe("src/index entrypoint", () => {
     expect(mocks.validateInputs).toHaveBeenCalledWith({
       containerPort: "8080:80",
       containerImage: "ghcr.io/acme/app:1.2.3",
+      execStart: "/usr/bin/node /srv/app/server.js --port 8080",
       firewallEnabled: "true",
       firewallExtraPorts: "8080, 53/udp , , 443",
       haproxyCfg: "/etc/haproxy/haproxy.cfg",
@@ -99,6 +101,7 @@ describe("src/index entrypoint", () => {
     expect(mocks.deployPipeline).toHaveBeenCalledWith({
       containerImage: "ghcr.io/acme/app:1.2.3",
       containerPort: "8080:80",
+      execStart: "/usr/bin/node /srv/app/server.js --port 8080",
       firewallEnabled: true,
       firewallExtraPorts: ["8080", "53/udp", "443"],
       haproxyCfg: "/etc/haproxy/haproxy.cfg",
@@ -125,6 +128,7 @@ describe("src/index entrypoint", () => {
     const logs = infoMessages();
     expect(logs).toContain("  ipv6_only:    true");
     expect(logs).toContain("  service_name: (provided)");
+    expect(logs).toContain("  exec_start:   (provided)");
     expect(logs).toContain("  container_image: ghcr.io/acme/app:1.2.3");
     expect(logs).toContain("  firewall_extra_ports: 8080, 53/udp, 443");
     expect(logs).toContain("Action completed.");
