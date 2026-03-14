@@ -57,6 +57,11 @@ vi.mock("../src/deploy/firewall.js", () => ({
   configureFirewall: vi.fn(),
 }));
 
+vi.mock("../src/deploy/ssh.js", () => ({
+  withKeyFile: vi.fn(),
+  waitForSsh: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (receive mocked implementations)
 // ---------------------------------------------------------------------------
@@ -72,6 +77,7 @@ import { rsyncDeploy } from "../src/deploy/rsync.js";
 import { deployPodman } from "../src/deploy/podman.js";
 import { deployHaproxy, deployHaproxyFragment } from "../src/deploy/haproxy.js";
 import { configureFirewall } from "../src/deploy/firewall.js";
+import { withKeyFile, waitForSsh } from "../src/deploy/ssh.js";
 import {
   deployPipeline,
   activeStages,
@@ -191,6 +197,8 @@ beforeEach(() => {
     unitInstalled: true,
     serviceRestarted: true,
   });
+  vi.mocked(withKeyFile).mockImplementation(async (_privateKey, callback) => callback("/tmp/fake-key"));
+  vi.mocked(waitForSsh).mockResolvedValue(undefined);
 });
 
 // ===========================================================================
@@ -422,6 +430,32 @@ describe("deployPipeline — Hetzner provisioning", () => {
     expect(core.setOutput).toHaveBeenCalledWith("server_id", "42");
     expect(core.setOutput).toHaveBeenCalledWith("server_status", "running");
   });
+
+  it("logs SSH readiness gate start and completion", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(core.info).toHaveBeenCalledWith("Waiting for SSH to become available...");
+    expect(core.info).toHaveBeenCalledWith("SSH is ready.");
+  });
+
+  it("waits for SSH using the temporary key path and effective IPv6 mode", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(withKeyFile).toHaveBeenCalledWith("PRIVATE_KEY", expect.any(Function));
+    expect(waitForSsh).toHaveBeenCalledWith("/tmp/fake-key", "deploy", "1.2.3.4", false);
+  });
+
+  it("passes server-effective ipv6Only to the SSH readiness gate", async () => {
+    vi.mocked(findOrCreateServer).mockResolvedValueOnce({
+      ...FAKE_SERVER,
+      ip: "2001:db8::1",
+      ipv6Only: true,
+    });
+
+    await deployPipeline(withInputs({ ipv6Only: false }));
+
+    expect(waitForSsh).toHaveBeenCalledWith("/tmp/fake-key", "deploy", "2001:db8::1", true);
+  });
 });
 
 // ===========================================================================
@@ -498,6 +532,16 @@ describe("deployPipeline — conditional skipping", () => {
 // ===========================================================================
 
 describe("deployPipeline — error propagation", () => {
+  it("stops before deployment stages when SSH readiness gate fails", async () => {
+    vi.mocked(waitForSsh).mockRejectedValueOnce(new Error("ssh not ready"));
+
+    await expect(deployPipeline(BASE_INPUTS)).rejects.toThrow("ssh not ready");
+
+    expect(installPackages).not.toHaveBeenCalled();
+    expect(ensureTargetDir).not.toHaveBeenCalled();
+    expect(rsyncDeploy).not.toHaveBeenCalled();
+  });
+
   it("wraps installPackages failure with DEPLOY_PIPELINE_installPackages prefix", async () => {
     vi.mocked(installPackages).mockRejectedValueOnce(new Error("apt-get failed"));
 

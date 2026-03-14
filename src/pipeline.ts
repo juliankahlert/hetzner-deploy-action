@@ -8,6 +8,7 @@ import { rsyncDeploy } from "./deploy/rsync.js";
 import { deployPodman } from "./deploy/podman.js";
 import { deployHaproxy, deployHaproxyFragment } from "./deploy/haproxy.js";
 import { configureFirewall } from "./deploy/firewall.js";
+import { waitForSsh, withKeyFile } from "./deploy/ssh.js";
 
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
@@ -170,6 +171,12 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
         "your GitHub Actions runner supports outbound IPv6.",
     );
   }
+
+  core.info("Waiting for SSH to become available...");
+  await withKeyFile(inputs.sshPrivateKey, async (keyPath) => {
+    await waitForSsh(keyPath, inputs.sshUser, server.ip, effectiveIpv6Only);
+  });
+  core.info("SSH is ready.");
 
   const stages = activeStages(inputs);
   const total = stages.length;
