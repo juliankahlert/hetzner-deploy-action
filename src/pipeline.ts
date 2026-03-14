@@ -6,7 +6,11 @@ import { ensureTargetDir, installSystemdUnit } from "./deploy/remoteSetup.js";
 import { installPackages } from "./deploy/packageInstall.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { deployPodman } from "./deploy/podman.js";
-import { deployHaproxy, deployHaproxyFragment } from "./deploy/haproxy.js";
+import {
+  deployHaproxy,
+  deployHaproxyBase,
+  deployHaproxyFragment,
+} from "./deploy/haproxy.js";
 import { configureFirewall } from "./deploy/firewall.js";
 import { waitForSsh, withKeyFile } from "./deploy/ssh.js";
 
@@ -272,6 +276,17 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
             });
           }
           if (inputs.haproxyFragment) {
+            if (!inputs.haproxyCfg) {
+              core.info(
+                "HAProxy fragment-only mode detected; deploying bundled base config before fragment deployment.",
+              );
+              haproxyResult = await deployHaproxyBase({
+                host: server.ip,
+                user: inputs.sshUser,
+                privateKey: inputs.sshPrivateKey,
+                ipv6Only: effectiveIpv6Only,
+              });
+            }
             if (!inputs.haproxyFragmentName) {
               throw new Error(
                 "haproxy_fragment_name is required for haproxy fragment deployment",

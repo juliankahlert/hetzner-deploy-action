@@ -54,7 +54,7 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 | `container_image` | no | — | OCI image reference. Enables the Podman stage. |
 | `container_port` | no | `8080` | Port mapping for Podman, e.g. `8080` or `8080:80`. |
 | `haproxy_cfg` | no | — | Path to a full HAProxy config. Enables the HAProxy stage. |
-| `haproxy_fragment` | no | — | Path to an HAProxy fragment to append. |
+| `haproxy_fragment` | no | — | Path to an HAProxy fragment to append. When set without `haproxy_cfg`, the action auto-deploys the bundled `templates/haproxy-base.cfg` as `/etc/haproxy/haproxy.cfg` so fragments are active immediately. |
 | `haproxy_fragment_name` | no | `fragment` | Remote filename for the HAProxy fragment. |
 | `firewall_enabled` | no | `true` | Enable the UFW firewall stage. |
 | `firewall_extra_ports` | no | — | Comma-separated extra ports to allow, e.g. `8080, 8443`. |
@@ -184,6 +184,24 @@ jobs:
     container_image: ghcr.io/my-org/api:latest
     container_port:  '8080:3000'
     service_name:    api
+```
+
+### Fragment-only HAProxy
+
+When you only set `haproxy_fragment` (without `haproxy_cfg`), the action automatically deploys the bundled base config to `/etc/haproxy/haproxy.cfg`. That base config includes `.include /etc/haproxy/conf.d/`, so your fragment is loaded by HAProxy without any extra setup.
+
+Validation covers both paths: the action runs `haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/conf.d/` to verify the base config and all fragments together before reloading the service.
+
+```yaml
+- uses: julian-kahlert/hetzner-deploy-action@v1
+  with:
+    hcloud_token:          ${{ secrets.HCLOUD_TOKEN }}
+    ssh_private_key:       ${{ secrets.SSH_PRIVATE_KEY }}
+    public_key:            ${{ secrets.SSH_PUBLIC_KEY }}
+    server_name:           web-prod
+    project_tag:           website
+    haproxy_fragment:      ./haproxy/my-backend.cfg
+    haproxy_fragment_name: my-backend
 ```
 
 ### Full stack with HAProxy and firewall

@@ -50,6 +50,7 @@ vi.mock("../src/deploy/podman.js", () => ({
 
 vi.mock("../src/deploy/haproxy.js", () => ({
   deployHaproxy: vi.fn(),
+  deployHaproxyBase: vi.fn(),
   deployHaproxyFragment: vi.fn(),
 }));
 
@@ -75,7 +76,11 @@ import { ensureTargetDir, installSystemdUnit } from "../src/deploy/remoteSetup.j
 import { installPackages } from "../src/deploy/packageInstall.js";
 import { rsyncDeploy } from "../src/deploy/rsync.js";
 import { deployPodman } from "../src/deploy/podman.js";
-import { deployHaproxy, deployHaproxyFragment } from "../src/deploy/haproxy.js";
+import {
+  deployHaproxy,
+  deployHaproxyBase,
+  deployHaproxyFragment,
+} from "../src/deploy/haproxy.js";
 import { configureFirewall } from "../src/deploy/firewall.js";
 import { withKeyFile, waitForSsh } from "../src/deploy/ssh.js";
 import {
@@ -182,6 +187,10 @@ beforeEach(() => {
     serviceRestarted: true,
   });
   vi.mocked(deployHaproxy).mockResolvedValue({
+    configUploaded: true,
+    serviceReloaded: true,
+  });
+  vi.mocked(deployHaproxyBase).mockResolvedValue({
     configUploaded: true,
     serviceReloaded: true,
   });
@@ -498,6 +507,7 @@ describe("deployPipeline — conditional skipping", () => {
     );
 
     expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyBase).toHaveBeenCalledOnce();
     expect(deployHaproxyFragment).toHaveBeenCalledOnce();
   });
 
@@ -511,6 +521,7 @@ describe("deployPipeline — conditional skipping", () => {
     );
 
     expect(deployHaproxy).toHaveBeenCalledOnce();
+    expect(deployHaproxyBase).not.toHaveBeenCalled();
     expect(deployHaproxyFragment).toHaveBeenCalledOnce();
   });
 
@@ -841,6 +852,24 @@ describe("deployPipeline — stage arguments", () => {
       fragmentName: "app",
       ipv6Only: false,
     });
+  });
+
+  it("passes correct options to deployHaproxyBase before fragment-only deployment", async () => {
+    await deployPipeline(
+      withInputs({
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(deployHaproxyBase).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      ipv6Only: false,
+    });
+    expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyFragment).toHaveBeenCalledOnce();
   });
 
   it("passes correct options to configureFirewall when firewall is enabled", async () => {

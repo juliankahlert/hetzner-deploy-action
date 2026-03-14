@@ -25,10 +25,15 @@ vi.mock("../src/deploy/ssh.js", () => ({
 // Imports (receive mocked implementations)
 // ---------------------------------------------------------------------------
 
+import * as core from "@actions/core";
 import * as fs from "node:fs";
 import * as ssh from "../src/deploy/ssh.js";
 
-import { deployHaproxy, deployHaproxyFragment } from "../src/deploy/haproxy";
+import {
+  deployHaproxy,
+  deployHaproxyBase,
+  deployHaproxyFragment,
+} from "../src/deploy/haproxy";
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -39,9 +44,12 @@ const CFG_PATH = "/workspace/haproxy.cfg";
 const FRAGMENT_PATH = "/workspace/fragments/app.cfg";
 const REMOTE_CFG_DIR = "/etc/haproxy";
 const REMOTE_CFG_PATH = "/etc/haproxy/haproxy.cfg";
+const BUNDLED_BASE_CFG_PATH_SUFFIX = "/templates/haproxy-base.cfg";
 const FRAGMENT_NAME = "app";
 const REMOTE_FRAGMENT_DIR = "/etc/haproxy/conf.d";
 const REMOTE_FRAGMENT_PATH = `/etc/haproxy/conf.d/${FRAGMENT_NAME}.cfg`;
+const REMOTE_FRAGMENT_VALIDATE_CMD =
+  `sudo haproxy -c -f '${REMOTE_CFG_PATH}' -f '${REMOTE_FRAGMENT_DIR}/'`;
 
 const BASE_OPTS = {
   host: "1.2.3.4",
@@ -56,6 +64,12 @@ const BASE_FRAGMENT_OPTS = {
   privateKey: "TEST_PRIVATE_KEY",
   fragmentPath: FRAGMENT_PATH,
   fragmentName: FRAGMENT_NAME,
+} as const;
+
+const BASE_BASE_OPTS = {
+  host: "1.2.3.4",
+  user: "root",
+  privateKey: "TEST_PRIVATE_KEY",
 } as const;
 
 const CONFIG_CONTENT = [
@@ -183,6 +197,45 @@ describe("deployHaproxy", () => {
 // deployHaproxyFragment
 // ===========================================================================
 
+describe("deployHaproxyBase", () => {
+  it("reads the bundled template, uploads it, and logs the deploy message", async () => {
+    const result = await deployHaproxyBase(BASE_BASE_OPTS);
+
+    expect(result).toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect.stringContaining(BUNDLED_BASE_CFG_PATH_SUFFIX),
+      "utf-8",
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      `[HAPROXY_UPLOAD] Deploying bundled HAProxy base config to ${REMOTE_CFG_PATH} for fragment-only mode.`,
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
+    expect(sshRemoteCmd(0)).toContain(
+      `sudo mkdir -p '${REMOTE_CFG_DIR}' && sudo tee '${REMOTE_CFG_PATH}' > /dev/null`,
+    );
+    expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
+    expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
+  });
+
+  it("wraps bundled template read failures with clear context", async () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => {
+      throw new Error("ENOENT: missing bundled template");
+    });
+
+    await expect(deployHaproxyBase(BASE_BASE_OPTS)).rejects.toThrow(
+      /HAPROXY_UPLOAD: failed to read bundled HAProxy base config: ENOENT: missing bundled template/,
+    );
+
+    expect(ssh.withKeyFile).not.toHaveBeenCalled();
+    expect(ssh.sshExec).not.toHaveBeenCalled();
+  });
+});
+
 describe("deployHaproxyFragment", () => {
   it("reads the fragment, uploads it, validates the full config, and reloads haproxy", async () => {
     const result = await deployHaproxyFragment(BASE_FRAGMENT_OPTS);
@@ -204,9 +257,7 @@ describe("deployHaproxyFragment", () => {
     );
     expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
     expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
-    expect(sshRemoteCmd(1)).toBe(
-      `sudo haproxy -c -f '${REMOTE_CFG_PATH}'`,
-    );
+    expect(sshRemoteCmd(1)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
     expect(sshRemoteCmd(2)).toBe("sudo systemctl reload haproxy");
   });
 
