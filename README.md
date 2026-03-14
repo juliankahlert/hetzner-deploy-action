@@ -116,6 +116,31 @@ GitHub-hosted runners only have outbound IPv4 connectivity. If your server is IP
 
 **Automatic detection and mismatch warning:** When the action reuses an existing server, it detects the server's actual IP configuration. If the server is IPv6-only but `ipv6_only` is set to `false` (or left at its default), the action emits a warning to alert you to the mismatch. The deploy continues using the server's real IPv6 address, and `server_ip` reflects that address — not the value of the `ipv6_only` input.
 
+### SSH readiness and troubleshooting
+
+After provisioning completes the action automatically waits for the server's SSH daemon to accept connections before running any deploy stage. This **SSH wait gate** bridges the gap between Hetzner reporting a server as `running` and sshd actually being ready.
+
+**Retry behaviour:**
+
+| Parameter | Value |
+|-----------|-------|
+| Initial delay | 2 s |
+| Back-off sequence | 2 → 4 → 8 → 16 → 32 s (exponential, doubling each attempt) |
+| Per-attempt cap | 32 s |
+| Maximum total wait | 120 s (cumulative across all retries) |
+
+Connection-level errors (timeout, connection refused, network unreachable) are retried automatically with exponential back-off. **Permission denied** errors are treated as unrecoverable — the wait gate fails immediately so you can fix the SSH key rather than burn through the full timeout.
+
+> **How it works:** The action runs `ssh … echo ok` against the server and checks for the literal response. Each failed attempt logs `SSH not ready yet, retrying in <N>s: <error>` so you can follow progress in the workflow log.
+
+**If SSH still fails after 120 s:**
+
+1. **Verify your key pair** — confirm that `ssh_private_key` and `public_key` are a matching pair and that the public key is in OpenSSH format.
+2. **Check server state** — open the Hetzner Cloud Console, navigate to the server, and confirm it shows status *Running*. Use the web console to verify sshd is active: `systemctl status sshd`.
+3. **Firewall / security group** — ensure no Hetzner Cloud Firewall is blocking port 22 for the runner's IP range.
+4. **IPv6 connectivity** — if `server_ip` is an IPv6 address, the runner must have outbound IPv6. See [IPv6 and runner compatibility](#ipv6-and-runner-compatibility) above.
+5. **Re-run the workflow** — transient cloud-init delays occasionally exceed 120 s on first boot. A simple re-run often succeeds because sshd is already up.
+
 ---
 
 ## Examples

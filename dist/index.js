@@ -40759,7 +40759,7 @@ async function waitForSsh(keyPath, user, host, ipv6Only = false) {
             if (plannedWaitS + delayS > SSH_READY_MAX_TOTAL_WAIT_S) {
                 throw err;
             }
-            core.info(`SSH not ready yet, retrying in ${delayS}s: ${msg}`);
+            lib_core.info(`SSH not ready yet, retrying in ${delayS}s: ${msg}`);
             await new Promise((resolve) => setTimeout(resolve, delayS * 1000));
             plannedWaitS += delayS;
             attempt += 1;
@@ -41508,6 +41508,7 @@ async function configureFirewall(options) {
 
 
 
+
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
 /* ------------------------------------------------------------------ */
@@ -41608,6 +41609,11 @@ async function deployPipeline(inputs) {
             `to reach the server at ${server.ip}. If deploy fails, verify that ` +
             "your GitHub Actions runner supports outbound IPv6.");
     }
+    lib_core.info("Waiting for SSH to become available...");
+    await withKeyFile(inputs.sshPrivateKey, async (keyPath) => {
+        await waitForSsh(keyPath, inputs.sshUser, server.ip, effectiveIpv6Only);
+    });
+    lib_core.info("SSH is ready.");
     const stages = activeStages(inputs);
     const total = stages.length;
     let setupResult = { unitInstalled: false, serviceRestarted: false };
