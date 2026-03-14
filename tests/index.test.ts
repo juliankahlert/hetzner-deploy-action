@@ -281,6 +281,70 @@ describe("src/index entrypoint", () => {
     );
   });
 
+  it("rejects malformed service yaml", async () => {
+    mockInputs({
+      service: "name: broken.service\nexec-start: [",
+    });
+
+    await importEntrypoint();
+
+    await vi.waitFor(() => {
+      expect(mocks.core.setFailed).toHaveBeenCalledWith(
+        expect.stringMatching(/^INPUT_VALIDATION_ Invalid YAML for "service":/),
+      );
+    });
+    expect(mocks.deployPipeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown keys in structured service yaml", async () => {
+    mockInputs({
+      service: [
+        "name: yaml.service",
+        "exec-start: /usr/bin/node /srv/app/yaml.js",
+        "unknown-key: nope",
+      ].join("\n"),
+    });
+
+    await importEntrypoint();
+
+    await vi.waitFor(() => {
+      expect(mocks.core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('INPUT_VALIDATION_ Invalid key in "service": "unknown-key"'),
+      );
+    });
+    expect(mocks.deployPipeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects scalar structured service yaml", async () => {
+    mockInputs({
+      service: "just-a-string",
+    });
+
+    await importEntrypoint();
+
+    await vi.waitFor(() => {
+      expect(mocks.core.setFailed).toHaveBeenCalledWith(
+        'INPUT_VALIDATION_ Input "service" must be a YAML mapping/object.',
+      );
+    });
+    expect(mocks.deployPipeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects array structured service yaml", async () => {
+    mockInputs({
+      service: "- name: foo",
+    });
+
+    await importEntrypoint();
+
+    await vi.waitFor(() => {
+      expect(mocks.core.setFailed).toHaveBeenCalledWith(
+        'INPUT_VALIDATION_ Input "service" must be a YAML mapping/object.',
+      );
+    });
+    expect(mocks.deployPipeline).not.toHaveBeenCalled();
+  });
+
   it("reports Error failures via core.setFailed", async () => {
     mocks.deployPipeline.mockRejectedValueOnce(new Error("boom"));
 
