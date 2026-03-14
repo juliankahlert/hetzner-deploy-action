@@ -41270,8 +41270,6 @@ defaults
   timeout connect 5s
   timeout client 30s
   timeout server 30s
-
-include /etc/haproxy/conf.d/
 `;
 const HAPROXY_FRAG_SERVICE_FALLBACK = `[Unit]
 Description=HAProxy fragment orchestration service
