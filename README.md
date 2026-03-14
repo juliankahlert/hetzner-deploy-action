@@ -50,7 +50,8 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 | `ssh_user` | no | `root` | SSH user for connecting to the server. |
 | `source_dir` | no | `.` | Workspace directory to deploy. |
 | `target_dir` | no | `/opt/app` | Remote directory where files are placed. |
-| `service_name` | no | — | Systemd service name to restart after deploy. |
+| `service` | no | — | Structured YAML map configuring the systemd service unit. Keys: `name`, `exec-start`, `type`, `restart`, `restart-sec`, `user`, `working-directory`. See [Structured `service` input](#structured-service-input) below. Overrides the legacy flat `service_name` input. |
+| `service_name` | no | — | **Deprecated.** Legacy alias — sets only the service name. Retained for backward compatibility; prefer the structured `service` input instead. Ignored when `service` is provided. |
 | `container_image` | no | — | OCI image reference. Enables the Podman stage. |
 | `container_port` | no | `8080` | Port mapping for Podman, e.g. `8080` or `8080:80`. |
 | `haproxy_cfg` | no | — | Path to a full HAProxy config. Enables the HAProxy stage. |
@@ -60,6 +61,44 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 | `firewall_extra_ports` | no | — | Comma-separated extra ports to allow, e.g. `8080, 8443`. |
 
 > **Secrets:** `hcloud_token`, `ssh_private_key`, and `public_key` contain sensitive material. Always store them as [encrypted secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) — never hard-code them in workflow files.
+
+### Structured `service` input
+
+The `service` input accepts a YAML map that configures every aspect of the generated systemd unit. Only `name` is required; all other keys have sensible defaults.
+
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `name` | **yes** | — | Systemd unit name (without `.service` suffix). |
+| `exec-start` | no | — | `ExecStart=` command. When omitted a placeholder echo command is used (``echo "<name> started"``) and the action emits a warning. Provide a real command for production workloads. |
+| `type` | no | `simple` | Systemd service type (`simple`, `exec`, `oneshot`, …). |
+| `restart` | no | `on-failure` | Restart policy (`no`, `always`, `on-failure`, `on-abnormal`, …). |
+| `restart-sec` | no | `5` | Seconds to wait before restarting. |
+| `user` | no | `root` | Intended Unix user for the service. **Note:** the current pipeline writes the `ssh_user` input value into the unit's `User=` directive; this key is accepted for forward compatibility but not yet applied. |
+| `working-directory` | no | — | Intended `WorkingDirectory=` path. **Note:** the current pipeline writes the `target_dir` input value into the unit's `WorkingDirectory=` directive; this key is accepted for forward compatibility but not yet applied. |
+
+**Example usage:**
+
+```yaml
+- uses: julian-kahlert/hetzner-deploy-action@v1
+  with:
+    hcloud_token:    ${{ secrets.HCLOUD_TOKEN }}
+    ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+    public_key:      ${{ secrets.SSH_PUBLIC_KEY }}
+    server_name:     worker
+    project_tag:     backend
+    source_dir:      ./build
+    target_dir:      /opt/worker
+    service:
+      name: worker
+      exec-start: /opt/worker/bin/serve --port 3000
+      type: simple
+      restart: always
+      restart-sec: 3
+      user: worker
+      working-directory: /opt/worker
+```
+
+> **Backward compatibility:** If the legacy `service_name` input is provided and `service` is absent, the action treats it as `service: { name: <service_name> }` with all other keys at their defaults. When both are provided, `service` takes precedence and `service_name` is ignored.
 
 ---
 
@@ -84,7 +123,7 @@ The action executes a pipeline of ordered stages. Core stages always run; option
  2. Find/create server       4. Ensure target directory
                              5. rsync deploy
                              6. Podman Quadlet     (if container_image)
-                             7. systemd unit       (if service_name, no container)
+                             7. systemd unit       (if service.name, no container)
                              8. HAProxy            (if haproxy_cfg or haproxy_fragment)
                              9. Firewall           (if firewall_enabled)
 ```
@@ -97,7 +136,7 @@ The action executes a pipeline of ordered stages. Core stages always run; option
 | ensureTargetDir | Always |
 | rsyncDeploy | Always |
 | podman | `container_image` is set |
-| systemd | `service_name` is set **and** `container_image` is not set |
+| systemd | `service.name` is set **and** `container_image` is absent |
 | haproxy | `haproxy_cfg` or `haproxy_fragment` is set |
 | firewall | `firewall_enabled` is `true` (default) |
 
@@ -238,6 +277,8 @@ Validation covers both paths: the action runs `haproxy -c -f /etc/haproxy/haprox
 ```sh
 npm install
 ```
+
+> **Runtime dependency:** `js-yaml` is used at runtime to parse the structured `service` input from its YAML map representation. It is bundled into `dist/index.js` by the build step.
 
 ### Scripts
 
