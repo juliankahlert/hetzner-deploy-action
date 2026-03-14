@@ -182,10 +182,13 @@ describe("remote setup helpers", () => {
     );
     expect(result).toEqual({ serviceUserEnsured: true });
 
-    expect(core.info).toHaveBeenCalledWith(
+    expect(core.info).toHaveBeenCalledTimes(2);
+    expect(core.info).toHaveBeenNthCalledWith(
+      1,
       expect.stringContaining("Ensuring service user deploy exists on 1.2.3.4"),
     );
-    expect(core.info).toHaveBeenCalledWith(
+    expect(core.info).toHaveBeenNthCalledWith(
+      2,
       expect.stringContaining("Service user deploy is ready."),
     );
   });
@@ -203,10 +206,13 @@ describe("remote setup helpers", () => {
     );
     expect(result).toEqual({ targetOwnershipReset: true });
 
-    expect(core.info).toHaveBeenCalledWith(
+    expect(core.info).toHaveBeenCalledTimes(2);
+    expect(core.info).toHaveBeenNthCalledWith(
+      1,
       expect.stringContaining("Resetting ownership for /opt/it's here to deploy:deploy on 1.2.3.4"),
     );
-    expect(core.info).toHaveBeenCalledWith(
+    expect(core.info).toHaveBeenNthCalledWith(
+      2,
       expect.stringContaining("Ownership reset for /opt/it's here."),
     );
   });
@@ -276,6 +282,29 @@ describe("installSystemdUnit", () => {
       expect(unitContent).toContain("Type=simple");
       expect(unitContent).toContain("Restart=on-failure");
       expect(unitContent).toContain("RestartSec=5");
+    });
+
+    it("uses explicit serviceWorkingDirectory override when provided", async () => {
+      await installSystemdUnit({
+        ...UNIT_OPTS,
+        serviceWorkingDirectory: "/srv/myapp/current",
+      });
+
+      const unitContent = uploadedUnitContent(0);
+      expect(unitContent).toContain("WorkingDirectory=/srv/myapp/current");
+      expect(unitContent).not.toContain("WorkingDirectory=/opt/app");
+    });
+
+    it("uses explicit serviceUser override when provided", async () => {
+      await installSystemdUnit({
+        ...UNIT_OPTS,
+        user: "ssh-user",
+        serviceUser: "svc-myapp",
+      });
+
+      const unitContent = uploadedUnitContent(0);
+      expect(unitContent).toContain("User=svc-myapp");
+      expect(unitContent).not.toContain("User=ssh-user");
     });
   });
 
@@ -375,6 +404,33 @@ describe("remoteSetup", () => {
     // Call 3: enable + restart
     expect(remoteCmd(3)).toContain("systemctl enable");
     expect(remoteCmd(3)).toContain("systemctl restart");
+  });
+
+  it("forwards supported unit options but not service-user override fields", async () => {
+    const opts = {
+      ...BASE_OPTS,
+      user: "ssh-user",
+      serviceName: "webapp",
+      execStart: "/usr/bin/node serve.js",
+      serviceType: "notify",
+      serviceRestart: "always",
+      serviceRestartSec: 30,
+      serviceUser: "svc-webapp",
+      serviceWorkingDirectory: "/srv/webapp/current",
+    };
+
+    await remoteSetup(opts as unknown as Parameters<typeof remoteSetup>[0]);
+
+    const unitContent = uploadedUnitContent(1);
+    expect(unitContent).toContain("Type=notify");
+    expect(unitContent).toContain("ExecStart=/usr/bin/node serve.js");
+    expect(unitContent).toContain("Restart=always");
+    expect(unitContent).toContain("RestartSec=30");
+
+    expect(unitContent).toContain("User=ssh-user");
+    expect(unitContent).not.toContain("User=svc-webapp");
+    expect(unitContent).toContain("WorkingDirectory=/opt/app");
+    expect(unitContent).not.toContain("WorkingDirectory=/srv/webapp/current");
   });
 });
 

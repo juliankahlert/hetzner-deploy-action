@@ -686,10 +686,36 @@ describe("validateServiceConfig", () => {
     expect(() => validateServiceConfig(undefined)).not.toThrow();
   });
 
+  it("allows service.workingDirectory to be omitted for fallback behavior", () => {
+    expect(() =>
+      validateServiceConfig({ user: "appuser", workingDirectory: undefined }),
+    ).not.toThrow();
+  });
+
   it("accepts a valid service.user", () => {
     expect(() =>
       validateServiceConfig({ user: "app_user-1" }),
     ).not.toThrow();
+  });
+
+  it("accepts an underscore-prefixed service.user", () => {
+    expect(() =>
+      validateServiceConfig({ user: "_appuser" }),
+    ).not.toThrow();
+  });
+
+  it("rejects empty string service.user", () => {
+    expect(() =>
+      validateServiceConfig({ user: "" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects service.user exceeding 32 chars", () => {
+    const user = "a" + "b".repeat(32);
+
+    expect(() =>
+      validateServiceConfig({ user }),
+    ).toThrow(/^INPUT_VALIDATION_/);
   });
 
   it("rejects service.user with invalid characters", () => {
@@ -710,9 +736,39 @@ describe("validateServiceConfig", () => {
     ).not.toThrow();
   });
 
+  it("rejects bare root as service.workingDirectory", () => {
+    expect(() =>
+      validateServiceConfig({ workingDirectory: "/" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
   it("rejects a malformed service.workingDirectory", () => {
     expect(() =>
       validateServiceConfig({ workingDirectory: "srv/my-app" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects service.workingDirectory traversal attempts containing '..'", () => {
+    expect(() =>
+      validateServiceConfig({ workingDirectory: "/srv/my-app/../secrets" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects service.workingDirectory when '..' appears anywhere in the path", () => {
+    expect(() =>
+      validateServiceConfig({ workingDirectory: "/srv/releases..backup" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects service.workingDirectory with shell-like metacharacters", () => {
+    expect(() =>
+      validateServiceConfig({ workingDirectory: "/srv/$(whoami)" }),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects service.workingDirectory with invalid characters", () => {
+    expect(() =>
+      validateServiceConfig({ workingDirectory: "/srv/my app" }),
     ).toThrow(/^INPUT_VALIDATION_/);
   });
 });

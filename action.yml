@@ -40,10 +40,10 @@ inputs:
     description: Systemd service name to restart after deploy
     required: false
   service:
-    description: Structured systemd service YAML mapping. When provided, YAML fields
-      override the flat service_* and exec_start inputs for matching settings. Prefer
-      this input for new configurations; the flat service inputs remain supported
-      for backward compatibility.
+    description: Structured systemd service YAML mapping. Configures the generated
+      unit file. When the 'user' key is set, the pipeline provisions the system account
+      and chowns the working directory (or target_dir). Overrides legacy flat service_*
+      and exec_start inputs for matching settings.
     required: false
     default: ''
   service_type:

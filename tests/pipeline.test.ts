@@ -436,6 +436,62 @@ describe("deployPipeline — stage ordering", () => {
     });
   });
 
+  it("skips service-user helpers when service.user is undefined", async () => {
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        service: makeService({
+          user: undefined,
+          workingDirectory: "/srv/myapp/current",
+        }),
+      }),
+    );
+
+    expect(ensureServiceUser).not.toHaveBeenCalled();
+    expect(setTargetOwnership).not.toHaveBeenCalled();
+    expect(installSystemdUnit).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      targetDir: "/opt/app",
+      serviceUser: undefined,
+      serviceWorkingDirectory: "/srv/myapp/current",
+      serviceName: "myapp",
+      execStart: "/usr/bin/node /opt/app/server.js",
+      serviceType: undefined,
+      serviceRestart: undefined,
+      serviceRestartSec: undefined,
+      ipv6Only: false,
+    });
+  });
+
+  it("passes undefined workingDirectory to installSystemdUnit when service workingDirectory is absent", async () => {
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        service: makeService({
+          user: "svc-myapp",
+          workingDirectory: undefined,
+        }),
+      }),
+    );
+
+    expect(installSystemdUnit).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      targetDir: "/opt/app",
+      serviceUser: "svc-myapp",
+      serviceWorkingDirectory: undefined,
+      serviceName: "myapp",
+      execStart: "/usr/bin/node /opt/app/server.js",
+      serviceType: undefined,
+      serviceRestart: undefined,
+      serviceRestartSec: undefined,
+      ipv6Only: false,
+    });
+  });
+
   it("does not call installSystemdUnit when service config is absent", async () => {
     await deployPipeline(withInputs({ serviceName: "myapp", service: undefined }));
 
@@ -783,6 +839,47 @@ describe("deployPipeline — error propagation", () => {
     await expect(
       deployPipeline(withInputs({ serviceName: "myapp", service: makeService() })),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_systemd: daemon-reload failed$/);
+  });
+
+  it("wraps ensureServiceUser failure with DEPLOY_PIPELINE_systemd prefix and stops later helpers", async () => {
+    vi.mocked(ensureServiceUser).mockRejectedValueOnce(new Error("useradd failed"));
+
+    await expect(
+      deployPipeline(
+        withInputs({
+          serviceName: "myapp",
+          service: makeService({ user: "svc-myapp" }),
+          firewallEnabled: true,
+        }),
+      ),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_systemd: useradd failed$/);
+
+    expect(ensureServiceUser).toHaveBeenCalledOnce();
+    expect(setTargetOwnership).not.toHaveBeenCalled();
+    expect(installSystemdUnit).not.toHaveBeenCalled();
+    expect(configureFirewall).not.toHaveBeenCalled();
+  });
+
+  it("wraps setTargetOwnership failure with DEPLOY_PIPELINE_systemd prefix and stops later helpers", async () => {
+    vi.mocked(setTargetOwnership).mockRejectedValueOnce(new Error("chown failed"));
+
+    await expect(
+      deployPipeline(
+        withInputs({
+          serviceName: "myapp",
+          service: makeService({
+            user: "svc-myapp",
+            workingDirectory: "/srv/myapp/current",
+          }),
+          firewallEnabled: true,
+        }),
+      ),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_systemd: chown failed$/);
+
+    expect(ensureServiceUser).toHaveBeenCalledOnce();
+    expect(setTargetOwnership).toHaveBeenCalledOnce();
+    expect(installSystemdUnit).not.toHaveBeenCalled();
+    expect(configureFirewall).not.toHaveBeenCalled();
   });
 
   it("wraps podman failure with DEPLOY_PIPELINE_podman prefix", async () => {

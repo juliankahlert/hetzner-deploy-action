@@ -73,8 +73,8 @@ The `service` input accepts a YAML map that configures every aspect of the gener
 | `type` | no | `simple` | Systemd service type (`simple`, `exec`, `oneshot`, …). |
 | `restart` | no | `on-failure` | Restart policy (`no`, `always`, `on-failure`, `on-abnormal`, …). |
 | `restart-sec` | no | `5` | Seconds to wait before restarting. |
-| `user` | no | `root` | Intended Unix user for the service. **Note:** the current pipeline writes the `ssh_user` input value into the unit's `User=` directive; this key is accepted for forward compatibility but not yet applied. |
-| `working-directory` | no | — | Intended `WorkingDirectory=` path. **Note:** the current pipeline writes the `target_dir` input value into the unit's `WorkingDirectory=` directive; this key is accepted for forward compatibility but not yet applied. |
+| `user` | no | — | Unix user for the service (`User=` directive). When set, the pipeline creates the account with `useradd --system` if it does not already exist and runs `chown -R` on the effective working directory (`working-directory` if set, otherwise `target_dir`). Omit to run as `ssh_user` with no provisioning or ownership changes. |
+| `working-directory` | no | — | Overrides the systemd `WorkingDirectory=` directive. Also serves as the `chown -R` target when `user` is set. Falls back to `target_dir` when omitted. |
 
 **Example usage:**
 
@@ -88,7 +88,7 @@ The `service` input accepts a YAML map that configures every aspect of the gener
     project_tag:     backend
     source_dir:      ./build
     target_dir:      /opt/worker
-    service:
+    service: |
       name: worker
       exec-start: /opt/worker/bin/serve --port 3000
       type: simple
@@ -99,6 +99,16 @@ The `service` input accepts a YAML map that configures every aspect of the gener
 ```
 
 > **Backward compatibility:** If the legacy `service_name` input is provided and `service` is absent, the action treats it as `service: { name: <service_name> }` with all other keys at their defaults. When both are provided, `service` takes precedence and `service_name` is ignored.
+
+**Service user and ownership behavior:**
+
+When `service.user` is set, the systemd stage performs these steps before installing the unit:
+
+1. **Provision user** — runs `id <user> || useradd --system --no-create-home --shell /usr/sbin/nologin <user>` (idempotent; skipped when the account already exists).
+2. **Set ownership** — runs `chown -R <user>:<user>` on the effective working directory (`service.working-directory` if set, otherwise `target_dir`).
+3. **Install unit** — writes `User=<user>` and `WorkingDirectory=<effective-dir>` into the generated systemd unit file.
+
+When `service.user` is omitted, steps 1 and 2 are skipped entirely. The unit runs as `ssh_user` and no ownership changes are made.
 
 ---
 
