@@ -261,7 +261,6 @@ export async function deployHaproxyBase(
   };
 
   const remotePath = "/etc/haproxy/haproxy.cfg";
-  const validateFragmentsPath = "/etc/haproxy/conf.d/";
   const configContent = readBundledHaproxyBase();
 
   core.info(
@@ -282,38 +281,9 @@ export async function deployHaproxyBase(
       throw new Error(`${ERR_UPLOAD}: ${msg}`);
     }
     result.configUploaded = true;
-    core.info(`[${ERR_UPLOAD}] HAProxy base configuration written to ${remotePath}.`);
-
-    core.info(`[${ERR_VALIDATE}] Validating HAProxy configuration…`);
-    try {
-      await sshExec(
-        keyPath,
-        user,
-        host,
-        `sudo haproxy -c -f ${shellQuote(remotePath)} -f ${shellQuote(validateFragmentsPath)}`,
-        ipv6Only,
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`${ERR_VALIDATE}: ${msg}`);
-    }
-    core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
-
-    core.info(`[${ERR_RELOAD}] Reloading active haproxy-frag service or starting it if inactive…`);
-    try {
-      await sshExec(
-        keyPath,
-        user,
-        host,
-        HAPROXY_START_OR_RELOAD_CMD,
-        ipv6Only,
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`${ERR_RELOAD}: ${msg}`);
-    }
-    result.serviceReloaded = true;
-    core.info(`[${ERR_RELOAD}] haproxy-frag service reloaded or started successfully.`);
+    core.info(
+      `[${ERR_UPLOAD}] HAProxy base configuration written to ${remotePath} for fragment-only mode.`,
+    );
   });
 
   return result;

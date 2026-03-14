@@ -56,8 +56,6 @@ const EARLY_CONF_DIR_MKDIR_CMD = "sudo mkdir -p '/etc/haproxy/conf.d/'";
 const ENABLE_HAPROXY_FRAG_CMD = "sudo systemctl enable haproxy-frag";
 const START_OR_RELOAD_HAPROXY_FRAG_CMD =
   "sudo systemctl is-active --quiet haproxy-frag && sudo systemctl reload haproxy-frag || sudo systemctl start haproxy-frag";
-const REMOTE_BASE_VALIDATE_CMD =
-  `sudo haproxy -c -f '${REMOTE_CFG_PATH}' -f '${REMOTE_FRAGMENT_DIR}/'`;
 const REMOTE_FRAGMENT_VALIDATE_CMD =
   `sudo haproxy -c -f '${REMOTE_CFG_PATH}' -f '${REMOTE_FRAGMENT_DIR}/'`;
 const STOP_DISABLE_HAPROXY_CMD =
@@ -247,7 +245,7 @@ describe("deployHaproxyBase", () => {
 
     expect(result).toEqual({
       configUploaded: true,
-      serviceReloaded: true,
+      serviceReloaded: false,
     });
 
     expect(fs.readFileSync).toHaveBeenCalledWith(
@@ -258,14 +256,12 @@ describe("deployHaproxyBase", () => {
       `[HAPROXY_UPLOAD] Deploying bundled HAProxy base config to ${REMOTE_CFG_PATH} for fragment-only mode.`,
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(1);
     expect(sshRemoteCmd(0)).toContain(
       `sudo mkdir -p '${REMOTE_CFG_DIR}' && sudo tee '${REMOTE_CFG_PATH}' > /dev/null`,
     );
     expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
     expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
-    expect(sshRemoteCmd(1)).toBe(REMOTE_BASE_VALIDATE_CMD);
-    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 
   it("falls back to the inline base config when the bundled template is missing", async () => {
@@ -275,7 +271,7 @@ describe("deployHaproxyBase", () => {
 
     expect(result).toEqual({
       configUploaded: true,
-      serviceReloaded: true,
+      serviceReloaded: false,
     });
     expect(fs.readFileSync).not.toHaveBeenCalled();
     expect(sshRemoteCmd(0)).toContain("log stdout format raw local0");
