@@ -40934,7 +40934,7 @@ const DEFAULT_PACKAGES = ["podman", "haproxy"];
  * lowercase alphanumeric, dots, plus signs, or hyphens.  Minimum 2 chars.
  * @see https://www.debian.org/doc/debian-policy/ch-controlfields.html#source
  */
-const VALID_PKG_RE = /^[a-z0-9][a-z0-9.+\-]+$/;
+const VALID_PKG_RE = /^[a-z0-9][a-z0-9.+-]+$/;
 /* ------------------------------------------------------------------ */
 /*  Stage / error prefixes                                            */
 /* ------------------------------------------------------------------ */
@@ -41022,9 +41022,9 @@ async function installPackages(opts) {
 /*  Input validation                                                  */
 /* ------------------------------------------------------------------ */
 /** Allowed characters in an absolute target directory path. */
-const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/\-]+$/;
+const SAFE_PATH_RE = /^\/[a-zA-Z0-9._/-]+$/;
 /** Allowed characters in an SSH user name. */
-const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.\-]*$/;
+const SAFE_USER_RE = /^[a-zA-Z_][a-zA-Z0-9_.-]*$/;
 /**
  * Deploy a local directory to a remote server using rsync over SSH.
  *
@@ -41848,13 +41848,13 @@ const rules = [
     {
         field: "sourceDir",
         label: "source_dir",
-        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._/-]*)$/,
         hint: 'Must be "." or a relative/absolute path without ".." or special characters.',
     },
     {
         field: "targetDir",
         label: "target_dir",
-        pattern: /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*$/,
+        pattern: /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$/,
         hint: 'Must be an absolute path (starts with /) without ".." or special characters.',
     },
     {
@@ -41891,7 +41891,7 @@ const rules = [
     {
         field: "containerImage",
         label: "container_image",
-        pattern: /^[a-zA-Z0-9][a-zA-Z0-9._\/:@-]*$/,
+        pattern: /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/,
         hint: "Must be a valid container image reference (e.g. nginx:latest, ghcr.io/org/app:v1).",
         optional: true,
     },
@@ -41912,14 +41912,14 @@ const rules = [
     {
         field: "haproxyCfg",
         label: "haproxy_cfg",
-        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._/-]*)$/,
         hint: 'Must be a relative or absolute path without ".." or special characters.',
         optional: true,
     },
     {
         field: "haproxyFragment",
         label: "haproxy_fragment",
-        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._\/-]*)$/,
+        pattern: /^(?!.*\.\.)(?:\.|\/?[a-zA-Z0-9._-][a-zA-Z0-9._/-]*)$/,
         hint: 'Must be "." or a relative/absolute path without ".." or special characters.',
         optional: true,
     },
