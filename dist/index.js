@@ -46024,7 +46024,6 @@ function parseServiceInput(input) {
     return mapKebabToCamel(raw);
 }
 function buildServiceConfig(raw) {
-    const parsedService = parseServiceInput(raw.serviceYaml ?? "");
     const merged = {
         ...(raw.serviceName
             ? {
@@ -46037,7 +46036,7 @@ function buildServiceConfig(raw) {
                     : DEFAULT_SERVICE_RESTART_SEC,
             }
             : {}),
-        ...parsedService,
+        ...raw.parsedService,
     };
     if (!merged.name) {
         return undefined;
@@ -46095,7 +46094,7 @@ function parseInputs() {
         serviceType,
         serviceRestart,
         serviceRestartSec,
-        serviceYaml: serviceYaml || undefined,
+        parsedService,
     });
     return {
         hcloudToken: lib_core.getInput("hcloud_token", { required: true }),
