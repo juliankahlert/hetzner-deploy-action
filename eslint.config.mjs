@@ -9,6 +9,8 @@ export default tseslint.config(
       "coverage/**",
       "node_modules/**",
       "doc-*/**",
+      "plan-opencode-*/**",
+      ".opencode-tool-output/**",
       "**/book/**",
     ],
   },
