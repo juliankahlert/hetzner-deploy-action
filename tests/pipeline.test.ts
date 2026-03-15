@@ -100,7 +100,7 @@ import {
   STAGE_ORDER,
   type ActionInputs,
 } from "../src/pipeline";
-import type { OsStrategy } from "../src/deploy/osStrategy.js";
+import { createDebianStrategy } from "../src/deploy/strategies/debian";
 
 vi.mock("../src/deploy/osDetect.js", () => ({
   detectOs: vi.fn(),
@@ -123,20 +123,7 @@ const FAKE_SSH_KEY = {
   fingerprint: "aa:bb:cc",
 };
 
-const DEBIAN_STRATEGY: OsStrategy = {
-  family: "debian",
-  packages: {
-    packageNamePattern: /^[a-z0-9][a-z0-9+.-]*$/,
-    install: vi.fn(() => "apt-get update && apt-get install -y podman haproxy"),
-    verify: vi.fn((pkg: string) => `dpkg -s ${pkg}`),
-  },
-  firewall: {
-    install: vi.fn(() => "apt-get update && apt-get install -y ufw"),
-    defaults: vi.fn(() => "ufw default deny incoming && ufw default allow outgoing"),
-    allow: vi.fn((rule: string) => `ufw allow ${rule}`),
-    enable: vi.fn(() => "ufw --force enable"),
-  },
-};
+const DEBIAN_STRATEGY = createDebianStrategy();
 
 /** Minimal valid inputs with all optional features disabled. */
 const BASE_INPUTS: ActionInputs = {

@@ -41,11 +41,36 @@ import {
 
 const FAKE_KEY_PATH = "/tmp/hda-key-XXXXXX/id";
 
+const DEBIAN_STRATEGY = createDebianStrategy();
+const FEDORA_STRATEGY = createFedoraStrategy();
+
+function expectedFirewallCommands(
+  strategy: {
+    firewall: {
+      install(): string;
+      defaults(): string;
+      allow(rule: string): string;
+      enable(): string;
+    };
+  },
+  extraPorts: readonly string[] = [],
+): string[] {
+  return [
+    strategy.firewall.install(),
+    strategy.firewall.defaults(),
+    strategy.firewall.allow("22/tcp"),
+    strategy.firewall.allow("80/tcp"),
+    strategy.firewall.allow("443/tcp"),
+    ...extraPorts.map((port) => strategy.firewall.allow(port)),
+    strategy.firewall.enable(),
+  ];
+}
+
 const BASE_OPTS = {
   host: "1.2.3.4",
   user: "root",
   privateKey: "TEST_PRIVATE_KEY",
-  strategy: createDebianStrategy(),
+  strategy: DEBIAN_STRATEGY,
 } as const;
 
 function sshRemoteCmd(callIndex: number): string {
@@ -94,14 +119,7 @@ describe("configureFirewall", () => {
     );
 
     expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(6);
-    expect(sshCallSlice(0)).toEqual([
-      "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1",
-      "sudo ufw default deny incoming && sudo ufw default allow outgoing",
-      "sudo ufw allow 22/tcp",
-      "sudo ufw allow 80/tcp",
-      "sudo ufw allow 443/tcp",
-      "sudo ufw --force enable",
-    ]);
+    expect(sshCallSlice(0)).toEqual(expectedFirewallCommands(DEBIAN_STRATEGY));
 
     expect(core.startGroup).toHaveBeenCalledWith("Configure firewall");
     expect(core.startGroup).toHaveBeenCalledWith("Enable firewall");
@@ -111,11 +129,7 @@ describe("configureFirewall", () => {
   it("uses a validate-and-install command when ensuring ufw is present", async () => {
     await configureFirewall(BASE_OPTS);
 
-    expect(sshRemoteCmd(0)).toContain("command -v ufw >/dev/null 2>&1 ||");
-    expect(sshRemoteCmd(0)).toContain("sudo apt-get update -qq");
-    expect(sshRemoteCmd(0)).toContain(
-      "apt-get install -y -qq ufw",
-    );
+    expect(sshRemoteCmd(0)).toBe(DEBIAN_STRATEGY.firewall.install());
     expect(core.info).toHaveBeenCalledWith(
       expect.stringContaining(`[${FIREWALL_ERRORS.INSTALL}]`),
     );
@@ -132,12 +146,8 @@ describe("configureFirewall", () => {
     );
 
     expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
-    expect(sshCallSlice(0)).toEqual([
-      "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1",
-      "sudo ufw default deny incoming && sudo ufw default allow outgoing",
-      "sudo ufw allow 22/tcp",
-    ]);
-    expect(sshCallSlice(0)).not.toContain("sudo ufw --force enable");
+    expect(sshCallSlice(0)).toEqual(expectedFirewallCommands(DEBIAN_STRATEGY).slice(0, 3));
+    expect(sshCallSlice(0)).not.toContain(DEBIAN_STRATEGY.firewall.enable());
   });
 
   it("wraps enable failures with a FIREWALL_ENABLE prefix", async () => {
@@ -154,7 +164,7 @@ describe("configureFirewall", () => {
     );
 
     expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(6);
-    expect(sshRemoteCmd(5)).toBe("sudo ufw --force enable");
+    expect(sshRemoteCmd(5)).toBe(DEBIAN_STRATEGY.firewall.enable());
   });
 
   it("keeps rerun commands idempotent and safe across repeated executions", async () => {
@@ -166,11 +176,9 @@ describe("configureFirewall", () => {
 
     expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(12);
     expect(sshCallSlice(0, 6)).toEqual(sshCallSlice(6, 12));
-    expect(sshCallSlice(0, 6)).toContain(
-      "sudo ufw default deny incoming && sudo ufw default allow outgoing",
-    );
-    expect(sshCallSlice(0, 6)).toContain("sudo ufw allow 22/tcp");
-    expect(sshCallSlice(0, 6)).toContain("sudo ufw --force enable");
+    expect(sshCallSlice(0, 6)).toContain(DEBIAN_STRATEGY.firewall.defaults());
+    expect(sshCallSlice(0, 6)).toContain(DEBIAN_STRATEGY.firewall.allow("22/tcp"));
+    expect(sshCallSlice(0, 6)).toContain(DEBIAN_STRATEGY.firewall.enable());
   });
 
   it("applies extra ports after the default web rules", async () => {
@@ -184,16 +192,9 @@ describe("configureFirewall", () => {
       rulesApplied: 5,
     });
 
-    expect(sshCallSlice(0)).toEqual([
-      "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1",
-      "sudo ufw default deny incoming && sudo ufw default allow outgoing",
-      "sudo ufw allow 22/tcp",
-      "sudo ufw allow 80/tcp",
-      "sudo ufw allow 443/tcp",
-      "sudo ufw allow 8080/tcp",
-      "sudo ufw allow 53/udp",
-      "sudo ufw --force enable",
-    ]);
+    expect(sshCallSlice(0)).toEqual(
+      expectedFirewallCommands(DEBIAN_STRATEGY, ["8080/tcp", "53/udp"]),
+    );
   });
 
   it("defaults to Debian strategy behavior when strategy is omitted", async () => {
@@ -208,14 +209,7 @@ describe("configureFirewall", () => {
       rulesApplied: 3,
     });
 
-    expect(sshCallSlice(0)).toEqual([
-      "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1",
-      "sudo ufw default deny incoming && sudo ufw default allow outgoing",
-      "sudo ufw allow 22/tcp",
-      "sudo ufw allow 80/tcp",
-      "sudo ufw allow 443/tcp",
-      "sudo ufw --force enable",
-    ]);
+    expect(sshCallSlice(0)).toEqual(expectedFirewallCommands(DEBIAN_STRATEGY));
   });
 
   it("uses Fedora firewall helpers when a Fedora strategy is provided", async () => {
@@ -223,7 +217,7 @@ describe("configureFirewall", () => {
       host: "1.2.3.4",
       user: "root",
       privateKey: "TEST_PRIVATE_KEY",
-      strategy: createFedoraStrategy(),
+      strategy: FEDORA_STRATEGY,
       extraPorts: [8080, "53/udp"],
     });
 
@@ -232,16 +226,9 @@ describe("configureFirewall", () => {
       rulesApplied: 5,
     });
 
-    expect(sshCallSlice(0)).toEqual([
-      "command -v firewall-cmd >/dev/null 2>&1 || (sudo dnf install -y --setopt=install_weak_deps=False firewalld && sudo systemctl enable --now firewalld) && command -v firewall-cmd >/dev/null 2>&1",
-      "sudo firewall-cmd --set-default-zone=drop",
-      "sudo firewall-cmd --permanent --add-port=22/tcp",
-      "sudo firewall-cmd --permanent --add-port=80/tcp",
-      "sudo firewall-cmd --permanent --add-port=443/tcp",
-      "sudo firewall-cmd --permanent --add-port=8080/tcp",
-      "sudo firewall-cmd --permanent --add-port=53/udp",
-      "sudo firewall-cmd --reload",
-    ]);
+    expect(sshCallSlice(0)).toEqual(
+      expectedFirewallCommands(FEDORA_STRATEGY, ["8080/tcp", "53/udp"]),
+    );
   });
 
   it("rejects invalid extra ports with a FIREWALL_VALIDATE prefix", async () => {

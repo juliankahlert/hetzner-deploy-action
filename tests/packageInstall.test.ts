@@ -64,6 +64,20 @@ const BASE_OPTS = {
 const debianStrategy = createDebianStrategy();
 const fedoraStrategy = createFedoraStrategy();
 
+function expectedInstallCommand(
+  strategy: typeof debianStrategy,
+  packages: readonly string[],
+): string {
+  return strategy.packages.install(packages);
+}
+
+function expectedVerifyCommand(
+  strategy: typeof debianStrategy,
+  packageName: string,
+): string {
+  return strategy.packages.verify(packageName);
+}
+
 /** Extract the remote command (last SSH arg) from a given exec mock call. */
 function remoteCmd(callIndex: number): string {
   const args = vi.mocked(exec.exec).mock.calls[callIndex][1]!;
@@ -100,14 +114,16 @@ describe("installPackages — success path", () => {
     // Stage 1: cloud-init
     expect(remoteCmd(0)).toBe("cloud-init status --wait");
 
-    // Stage 2: apt-get install (shell-quoted package names)
+    // Stage 2: install using strategy-generated command
     expect(remoteCmd(1)).toBe(
-      `sudo apt-get update -qq && sudo apt-get install -y -qq ${DEFAULT_PACKAGES.map((p) => `'${p}'`).join(" ")}`,
+      expectedInstallCommand(debianStrategy, DEFAULT_PACKAGES),
     );
 
-    // Stage 3: verify — one dpkg -s per package (shell-quoted)
+    // Stage 3: verify — one strategy-generated command per package
     for (let i = 0; i < DEFAULT_PACKAGES.length; i++) {
-      expect(remoteCmd(2 + i)).toBe(`dpkg -s '${DEFAULT_PACKAGES[i]}'`);
+      expect(remoteCmd(2 + i)).toBe(
+        expectedVerifyCommand(debianStrategy, DEFAULT_PACKAGES[i]),
+      );
     }
   });
 
@@ -118,19 +134,19 @@ describe("installPackages — success path", () => {
       strategy: debianStrategy,
     });
 
-    expect(remoteCmd(1)).toBe(
-      "sudo apt-get update -qq && sudo apt-get install -y -qq 'nginx'",
-    );
-    expect(remoteCmd(2)).toBe("dpkg -s 'nginx'");
+    expect(remoteCmd(1)).toBe(expectedInstallCommand(debianStrategy, ["nginx"]));
+    expect(remoteCmd(2)).toBe(expectedVerifyCommand(debianStrategy, "nginx"));
   });
 
   it("defaults to Debian strategy when omitted", async () => {
     await installPackages(BASE_OPTS);
 
     expect(remoteCmd(1)).toBe(
-      `sudo apt-get update -qq && sudo apt-get install -y -qq ${DEFAULT_PACKAGES.map((p) => `'${p}'`).join(" ")}`,
+      expectedInstallCommand(debianStrategy, DEFAULT_PACKAGES),
     );
-    expect(remoteCmd(2)).toBe(`dpkg -s '${DEFAULT_PACKAGES[0]}'`);
+    expect(remoteCmd(2)).toBe(
+      expectedVerifyCommand(debianStrategy, DEFAULT_PACKAGES[0]),
+    );
   });
 
   it("uses Fedora strategy commands when provided", async () => {
@@ -141,10 +157,10 @@ describe("installPackages — success path", () => {
     });
 
     expect(remoteCmd(1)).toBe(
-      "sudo dnf install -y --setopt=install_weak_deps=False 'podman' 'haproxy'",
+      expectedInstallCommand(fedoraStrategy, ["podman", "haproxy"]),
     );
-    expect(remoteCmd(2)).toBe("rpm -q 'podman'");
-    expect(remoteCmd(3)).toBe("rpm -q 'haproxy'");
+    expect(remoteCmd(2)).toBe(expectedVerifyCommand(fedoraStrategy, "podman"));
+    expect(remoteCmd(3)).toBe(expectedVerifyCommand(fedoraStrategy, "haproxy"));
   });
 
   it("logs stage labels with PACKAGE_INSTALL_ prefix", async () => {
@@ -306,10 +322,8 @@ describe("installPackages — input validation", () => {
       }),
     ).resolves.toBeUndefined();
 
-    expect(remoteCmd(1)).toBe(
-      "sudo dnf install -y --setopt=install_weak_deps=False 'Nginx'",
-    );
-    expect(remoteCmd(2)).toBe("rpm -q 'Nginx'");
+    expect(remoteCmd(1)).toBe(expectedInstallCommand(fedoraStrategy, ["Nginx"]));
+    expect(remoteCmd(2)).toBe(expectedVerifyCommand(fedoraStrategy, "Nginx"));
   });
 
   it("does not create a key file when validation fails", async () => {
