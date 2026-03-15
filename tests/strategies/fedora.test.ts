@@ -51,12 +51,14 @@ describe("createFedoraStrategy", () => {
       "command -v firewall-cmd >/dev/null 2>&1 || (sudo dnf install -y --setopt=install_weak_deps=False firewalld && sudo systemctl enable --now firewalld) && command -v firewall-cmd >/dev/null 2>&1",
     );
     expect(strategy.firewall.defaults()).toBe(
-      "sudo firewall-cmd --set-default-zone=drop",
+      "sudo systemctl is-active firewalld",
     );
     expect(strategy.firewall.allow("443/tcp")).toBe(
-      "sudo firewall-cmd --permanent --add-port=443/tcp",
+      "sudo firewall-cmd --permanent --zone=drop --add-port=443/tcp",
     );
-    expect(strategy.firewall.enable()).toBe("sudo firewall-cmd --reload");
+    expect(strategy.firewall.enable()).toBe(
+      "sudo firewall-cmd --set-default-zone=drop && sudo firewall-cmd --reload",
+    );
   });
 
   it("emits [FEDORA] debug logs for generated commands", () => {
@@ -83,15 +85,15 @@ describe("createFedoraStrategy", () => {
     );
     expect(core.debug).toHaveBeenNthCalledWith(
       4,
-      "[FEDORA] Generated firewall defaults command: sudo firewall-cmd --set-default-zone=drop",
+      "[FEDORA] Generated firewall defaults command: sudo systemctl is-active firewalld",
     );
     expect(core.debug).toHaveBeenNthCalledWith(
       5,
-      "[FEDORA] Generated firewall allow command: sudo firewall-cmd --permanent --add-port=80/tcp",
+      "[FEDORA] Generated firewall allow command: sudo firewall-cmd --permanent --zone=drop --add-port=80/tcp",
     );
     expect(core.debug).toHaveBeenNthCalledWith(
       6,
-      "[FEDORA] Generated firewall enable command: sudo firewall-cmd --reload",
+      "[FEDORA] Generated firewall enable command: sudo firewall-cmd --set-default-zone=drop && sudo firewall-cmd --reload",
     );
   });
 });

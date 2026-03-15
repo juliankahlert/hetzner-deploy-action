@@ -47,19 +47,19 @@ export function createFedoraStrategy(): OsStrategy {
       defaults(): string {
         return debugCommand(
           "Generated firewall defaults command",
-          "sudo firewall-cmd --set-default-zone=drop",
+          "sudo systemctl is-active firewalld",
         );
       },
       allow(rule: string): string {
         return debugCommand(
           "Generated firewall allow command",
-          `sudo firewall-cmd --permanent --add-port=${rule}`,
+          `sudo firewall-cmd --permanent --zone=drop --add-port=${rule}`,
         );
       },
       enable(): string {
         return debugCommand(
           "Generated firewall enable command",
-          "sudo firewall-cmd --reload",
+          "sudo firewall-cmd --set-default-zone=drop && sudo firewall-cmd --reload",
         );
       },
     }),

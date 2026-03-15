@@ -44909,13 +44909,13 @@ function createFedoraStrategy() {
                 return fedora_debugCommand("Generated firewall install command", "command -v firewall-cmd >/dev/null 2>&1 || (sudo dnf install -y --setopt=install_weak_deps=False firewalld && sudo systemctl enable --now firewalld) && command -v firewall-cmd >/dev/null 2>&1");
             },
             defaults() {
-                return fedora_debugCommand("Generated firewall defaults command", "sudo firewall-cmd --set-default-zone=drop");
+                return fedora_debugCommand("Generated firewall defaults command", "sudo systemctl is-active firewalld");
             },
             allow(rule) {
-                return fedora_debugCommand("Generated firewall allow command", `sudo firewall-cmd --permanent --add-port=${rule}`);
+                return fedora_debugCommand("Generated firewall allow command", `sudo firewall-cmd --permanent --zone=drop --add-port=${rule}`);
             },
             enable() {
-                return fedora_debugCommand("Generated firewall enable command", "sudo firewall-cmd --reload");
+                return fedora_debugCommand("Generated firewall enable command", "sudo firewall-cmd --set-default-zone=drop && sudo firewall-cmd --reload");
             },
         }),
     });
