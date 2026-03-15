@@ -2,7 +2,7 @@
 
 Create or update a Hetzner Cloud server and deploy a directory to it — all from a single GitHub Actions step.
 
-The action provisions a server via the Hetzner Cloud API, syncs your build artifacts with `rsync`, and optionally configures **Podman** containers, **HAProxy** reverse-proxying, **systemd** services, and **UFW** firewall rules.
+The action provisions a server via the Hetzner Cloud API, syncs your build artifacts with `rsync`, and optionally configures **Podman** containers, **HAProxy** reverse-proxying, **systemd** services, and **firewall** rules (UFW on Debian/Ubuntu, firewalld on Fedora).
 
 ---
 
@@ -13,7 +13,7 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 - **rsync deploy** — fast incremental file transfer to the remote host
 - **Podman Quadlet** — deploy OCI containers managed by systemd (set `container_image`)
 - **HAProxy** — upload a full config or append a fragment to `/etc/haproxy/conf.d/`
-- **Firewall** — configure UFW with sensible defaults and optional extra ports
+- **Firewall** — OS-aware firewall setup (UFW on Debian/Ubuntu, firewalld on Fedora) with sensible defaults and optional extra ports
 - **systemd service** — install and restart a systemd unit for non-container workloads
 - **IPv6-only support** — provision servers without a public IPv4 address
 
@@ -57,7 +57,7 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 | `haproxy_cfg` | no | — | Path to a full HAProxy config. Enables the HAProxy stage. |
 | `haproxy_fragment` | no | — | Path to an HAProxy fragment to append. When set without `haproxy_cfg`, the action auto-deploys the bundled `templates/haproxy-base.cfg` as `/etc/haproxy/haproxy.cfg` so fragments are active immediately. |
 | `haproxy_fragment_name` | no | `fragment` | Remote filename for the HAProxy fragment. |
-| `firewall_enabled` | no | `true` | Enable the UFW firewall stage. |
+| `firewall_enabled` | no | `true` | Enable the firewall stage (UFW on Debian/Ubuntu, firewalld on Fedora). |
 | `firewall_extra_ports` | no | — | Comma-separated extra ports to allow, e.g. `8080, 8443`. |
 
 > **Secrets:** `hcloud_token`, `ssh_private_key`, and `public_key` contain sensitive material. Always store them as [encrypted secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) — never hard-code them in workflow files.
@@ -312,7 +312,7 @@ src/
     rsync.ts            # rsync file transfer
     podman.ts           # Podman Quadlet deployment
     haproxy.ts          # HAProxy config and fragment deployment
-    firewall.ts         # UFW firewall configuration
+    firewall.ts         # OS-aware firewall configuration (UFW / firewalld)
     remoteSetup.ts      # Target directory and systemd unit setup
     packageInstall.ts   # Remote package installation
     ssh.ts              # SSH connection helpers
