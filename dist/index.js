@@ -44825,7 +44825,260 @@ async function remoteSetup(opts) {
     return result;
 }
 //# sourceMappingURL=remoteSetup.js.map
+;// CONCATENATED MODULE: ./lib/deploy/strategies/debian.js
+
+
+const DEBIAN_LOG_PREFIX = "[DEBIAN]";
+/**
+ * Valid Debian package name: lowercase alphanumeric start, followed by
+ * lowercase alphanumeric, dots, plus signs, or hyphens. Minimum 2 chars.
+ * @see https://www.debian.org/doc/debian-policy/ch-controlfields.html#source
+ */
+const DEBIAN_PACKAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9.+-]+$/;
+function logInfo(message) {
+    lib_core.info(`${DEBIAN_LOG_PREFIX} ${message}`);
+}
+function logDebug(message) {
+    lib_core.debug(`${DEBIAN_LOG_PREFIX} ${message}`);
+}
+function debugCommand(label, command) {
+    logDebug(`${label}: ${command}`);
+    return command;
+}
+/** Create the Debian package/firewall command strategy. */
+function createDebianStrategy() {
+    logInfo("Creating Debian OS strategy.");
+    return Object.freeze({
+        family: "debian",
+        packages: Object.freeze({
+            packageNamePattern: DEBIAN_PACKAGE_NAME_PATTERN,
+            install(packages) {
+                const pkgList = packages.map((pkg) => shellQuote(pkg)).join(" ");
+                return debugCommand("Generated package install command", `sudo apt-get update -qq && sudo apt-get install -y -qq ${pkgList}`);
+            },
+            verify(packageName) {
+                return debugCommand("Generated package verify command", `dpkg -s ${shellQuote(packageName)}`);
+            },
+        }),
+        firewall: Object.freeze({
+            install() {
+                return debugCommand("Generated firewall install command", "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1");
+            },
+            defaults() {
+                return debugCommand("Generated firewall defaults command", "sudo ufw default deny incoming && sudo ufw default allow outgoing");
+            },
+            allow(rule) {
+                return debugCommand("Generated firewall allow command", `sudo ufw allow ${rule}`);
+            },
+            enable() {
+                return debugCommand("Generated firewall enable command", "sudo ufw --force enable");
+            },
+        }),
+    });
+}
+//# sourceMappingURL=debian.js.map
+;// CONCATENATED MODULE: ./lib/deploy/strategies/fedora.js
+
+
+const FEDORA_LOG_PREFIX = "[FEDORA]";
+const FEDORA_PACKAGE_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._+-]+$/;
+function fedora_logInfo(message) {
+    lib_core.info(`${FEDORA_LOG_PREFIX} ${message}`);
+}
+function fedora_debugCommand(label, command) {
+    lib_core.debug(`${FEDORA_LOG_PREFIX} ${label}: ${command}`);
+    return command;
+}
+/** Create the Fedora-specific deployment strategy factory. */
+function createFedoraStrategy() {
+    fedora_logInfo("Creating Fedora OS strategy.");
+    return Object.freeze({
+        family: "fedora",
+        packages: Object.freeze({
+            packageNamePattern: FEDORA_PACKAGE_NAME_PATTERN,
+            install(packages) {
+                const pkgList = packages.map((pkg) => shellQuote(pkg)).join(" ");
+                return fedora_debugCommand("Generated package install command", `sudo dnf install -y --setopt=install_weak_deps=False ${pkgList}`);
+            },
+            verify(packageName) {
+                return fedora_debugCommand("Generated package verify command", `rpm -q ${shellQuote(packageName)}`);
+            },
+        }),
+        firewall: Object.freeze({
+            install() {
+                return fedora_debugCommand("Generated firewall install command", "command -v firewall-cmd >/dev/null 2>&1 || (sudo dnf install -y --setopt=install_weak_deps=False firewalld && sudo systemctl enable --now firewalld) && command -v firewall-cmd >/dev/null 2>&1");
+            },
+            defaults() {
+                return fedora_debugCommand("Generated firewall defaults command", "sudo firewall-cmd --set-default-zone=drop");
+            },
+            allow(rule) {
+                return fedora_debugCommand("Generated firewall allow command", `sudo firewall-cmd --permanent --add-port=${rule}`);
+            },
+            enable() {
+                return fedora_debugCommand("Generated firewall enable command", "sudo firewall-cmd --reload");
+            },
+        }),
+    });
+}
+//# sourceMappingURL=fedora.js.map
+;// CONCATENATED MODULE: ./lib/deploy/osDetect.js
+
+
+
+
+const OS_DETECT_LOG_PREFIX = "[OS_DETECT]";
+const OS_DETECT_ERROR_PREFIX = "OS_DETECT";
+const OS_DETECT_UNSUPPORTED = "OS_DETECT_UNSUPPORTED";
+const DEBIAN_IDENTIFIERS = new Set(["debian", "ubuntu"]);
+const FEDORA_IDENTIFIERS = new Set([
+    "fedora",
+    "centos",
+    "rocky",
+    "rhel",
+]);
+function osDetect_logInfo(message) {
+    lib_core.info(`${OS_DETECT_LOG_PREFIX} ${message}`);
+}
+function logWarning(message) {
+    lib_core.warning(`${OS_DETECT_LOG_PREFIX} ${message}`);
+}
+function osDetect_logDebug(message) {
+    lib_core.debug(`${OS_DETECT_LOG_PREFIX} ${message}`);
+}
+function normalizeOsReleaseValue(rawValue) {
+    const value = rawValue.trim();
+    if (value.length < 2) {
+        return value;
+    }
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+        return value.slice(1, -1).trim();
+    }
+    return value;
+}
+function familyFromIdentifiers(identifiers) {
+    for (const identifier of identifiers) {
+        if (DEBIAN_IDENTIFIERS.has(identifier)) {
+            return "debian";
+        }
+        if (FEDORA_IDENTIFIERS.has(identifier)) {
+            return "fedora";
+        }
+    }
+    return null;
+}
+function createUnsupportedError(detail) {
+    return new Error(`${OS_DETECT_UNSUPPORTED}: ${detail}`);
+}
+function wrapOsDetectError(error) {
+    if (error instanceof Error && error.message.startsWith(OS_DETECT_ERROR_PREFIX)) {
+        return error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return new Error(`${OS_DETECT_ERROR_PREFIX}: ${message}`);
+}
+async function readOsReleaseOverSsh(options) {
+    const { privateKey, user, host, ipv6Only = false } = options;
+    try {
+        return await withKeyFile(privateKey, async (keyPath) => {
+            osDetect_logDebug(`Reading /etc/os-release from ${host}.`);
+            return await sshExec(keyPath, user, host, "cat /etc/os-release", ipv6Only);
+        });
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${OS_DETECT_ERROR_PREFIX}: failed to read /etc/os-release over SSH: ${message}`);
+    }
+}
+/**
+ * Detect an OS family directly from a Hetzner image slug.
+ *
+ * Returns `null` when the slug does not map to a supported family.
+ */
+function detectOsFromSlug(image) {
+    const identifiers = image
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter((part) => part.length > 0);
+    return familyFromIdentifiers(identifiers);
+}
+/**
+ * Parse `/etc/os-release` content and map it to a supported OS family.
+ *
+ * Throws `OS_DETECT_UNSUPPORTED` when the parsed identifiers are unknown.
+ */
+function parseOsRelease(content) {
+    const entries = new Map();
+    for (const rawLine of content.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (line.length === 0 || line.startsWith("#")) {
+            continue;
+        }
+        const separatorIndex = line.indexOf("=");
+        if (separatorIndex === -1) {
+            continue;
+        }
+        const key = line.slice(0, separatorIndex).trim();
+        const value = normalizeOsReleaseValue(line.slice(separatorIndex + 1));
+        entries.set(key, value);
+    }
+    const id = entries.get("ID")?.toLowerCase() ?? "";
+    const idLike = (entries.get("ID_LIKE") ?? "")
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((part) => part.length > 0);
+    osDetect_logDebug(`Parsed /etc/os-release identifiers: ID=${JSON.stringify(id)}, ID_LIKE=${JSON.stringify(idLike)}.`);
+    const family = familyFromIdentifiers([id, ...idLike].filter((part) => part.length > 0));
+    if (family) {
+        return family;
+    }
+    throw createUnsupportedError(`unsupported /etc/os-release identifiers: ID=${JSON.stringify(id)}, ID_LIKE=${JSON.stringify(idLike.join(" "))}`);
+}
+/** Create a deployment strategy for a supported OS family. */
+function createStrategyForFamily(family) {
+    switch (family) {
+        case "debian":
+            return createDebianStrategy();
+        case "fedora":
+            return createFedoraStrategy();
+    }
+}
+/**
+ * Detect the remote operating-system family and return the matching strategy.
+ *
+ * Detection order:
+ *   1. Fast-path from the provisioned image slug.
+ *   2. Fallback to remote `/etc/os-release` over SSH.
+ *   3. Throw `OS_DETECT_UNSUPPORTED` when still unknown.
+ */
+async function detectOs(options) {
+    const { image, host } = options;
+    osDetect_logInfo(`Starting OS detection for ${host}.`);
+    osDetect_logDebug(`Evaluating image slug ${JSON.stringify(image)}.`);
+    try {
+        const familyFromSlug = detectOsFromSlug(image);
+        if (familyFromSlug) {
+            osDetect_logInfo(`Detected ${familyFromSlug} family from image slug.`);
+            const strategy = createStrategyForFamily(familyFromSlug);
+            osDetect_logInfo(`Completed OS detection with ${strategy.family} strategy.`);
+            return strategy;
+        }
+        logWarning(`Unsupported or unknown image slug ${JSON.stringify(image)}; falling back to /etc/os-release over SSH.`);
+        const osRelease = await readOsReleaseOverSsh(options);
+        osDetect_logDebug(`Fetched /etc/os-release (${osRelease.length} bytes).`);
+        const familyFromOsRelease = parseOsRelease(osRelease);
+        osDetect_logInfo(`Detected ${familyFromOsRelease} family from /etc/os-release.`);
+        const strategy = createStrategyForFamily(familyFromOsRelease);
+        osDetect_logInfo(`Completed OS detection with ${strategy.family} strategy.`);
+        return strategy;
+    }
+    catch (error) {
+        throw wrapOsDetectError(error);
+    }
+}
+//# sourceMappingURL=osDetect.js.map
 ;// CONCATENATED MODULE: ./lib/deploy/packageInstall.js
+
 
 
 /* ------------------------------------------------------------------ */
@@ -44833,12 +45086,6 @@ async function remoteSetup(opts) {
 /* ------------------------------------------------------------------ */
 /** Default packages provisioned on every server. */
 const DEFAULT_PACKAGES = ["podman", "haproxy"];
-/**
- * Valid Debian package name: lowercase alphanumeric start, followed by
- * lowercase alphanumeric, dots, plus signs, or hyphens.  Minimum 2 chars.
- * @see https://www.debian.org/doc/debian-policy/ch-controlfields.html#source
- */
-const VALID_PKG_RE = /^[a-z0-9][a-z0-9.+-]+$/;
 /* ------------------------------------------------------------------ */
 /*  Stage / error prefixes                                            */
 /* ------------------------------------------------------------------ */
@@ -44851,15 +45098,15 @@ const STAGE_VALIDATE = "PACKAGE_INSTALL_VALIDATE";
 /* ------------------------------------------------------------------ */
 /**
  * Validate that `packages` is non-empty and every entry conforms to the
- * Debian package naming policy.  Throws with a `PACKAGE_INSTALL_VALIDATE:`
- * prefix on failure.
+ * selected strategy package naming policy. Throws with a
+ * `PACKAGE_INSTALL_VALIDATE:` prefix on failure.
  */
-function validatePackageNames(packages) {
+function validatePackageNames(packages, strategy) {
     if (packages.length === 0) {
         throw new Error(`${STAGE_VALIDATE}: package list must not be empty`);
     }
     for (const name of packages) {
-        if (!VALID_PKG_RE.test(name)) {
+        if (!strategy.packages.packageNamePattern.test(name)) {
             throw new Error(`${STAGE_VALIDATE}: invalid package name: ${JSON.stringify(name)}`);
         }
     }
@@ -44872,15 +45119,15 @@ function validatePackageNames(packages) {
  *
  * Stages:
  *   1. Wait for cloud-init to finish (so apt locks are released).
- *   2. `apt-get update && apt-get install` the requested packages.
- *   3. Verify each package is installed via `dpkg -s`.
+ *   2. Install the requested packages via the selected OS strategy.
+ *   3. Verify each package is installed via the selected OS strategy.
  *
  * All errors are prefixed with their stage label (`PACKAGE_INSTALL_*`)
  * for easy identification in CI logs.
  */
 async function installPackages(opts) {
-    const { host, user, privateKey, packages = DEFAULT_PACKAGES, ipv6Only = false, } = opts;
-    validatePackageNames(packages);
+    const { host, user, privateKey, packages = DEFAULT_PACKAGES, strategy = createDebianStrategy(), ipv6Only = false, } = opts;
+    validatePackageNames(packages, strategy);
     await withKeyFile(privateKey, async (keyPath) => {
         // Stage 1: Wait for cloud-init readiness
         lib_core.info(`[${STAGE_CLOUD_INIT}] Waiting for cloud-init to complete…`);
@@ -44894,9 +45141,10 @@ async function installPackages(opts) {
         lib_core.info(`[${STAGE_CLOUD_INIT}] Cloud-init ready.`);
         // Stage 2: Install packages
         const pkgList = packages.map((p) => shellQuote(p)).join(" ");
+        const installCommand = strategy.packages.install(packages);
         lib_core.info(`[${STAGE_INSTALL}] Installing packages: ${pkgList}…`);
         try {
-            await sshExec(keyPath, user, host, `sudo apt-get update -qq && sudo apt-get install -y -qq ${pkgList}`, ipv6Only);
+            await sshExec(keyPath, user, host, installCommand, ipv6Only);
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -44907,7 +45155,7 @@ async function installPackages(opts) {
         lib_core.info(`[${STAGE_VERIFY}] Verifying installed packages…`);
         try {
             for (const pkg of packages) {
-                await sshExec(keyPath, user, host, `dpkg -s ${shellQuote(pkg)}`, ipv6Only);
+                await sshExec(keyPath, user, host, strategy.packages.verify(pkg), ipv6Only);
             }
         }
         catch (err) {
@@ -45431,6 +45679,7 @@ async function deployHaproxyFragment(opts) {
 ;// CONCATENATED MODULE: ./lib/deploy/firewall.js
 
 
+
 /* ------------------------------------------------------------------ */
 /*  Error-prefix constants                                            */
 /* ------------------------------------------------------------------ */
@@ -45482,49 +45731,49 @@ async function runFirewallCommand(keyPath, user, host, command, errorPrefix, ipv
 /*  Public API                                                        */
 /* ------------------------------------------------------------------ */
 /**
- * Install and configure UFW on a remote host.
+ * Install and configure the firewall on a remote host.
  *
  * Stages:
- *   1. Validate/install `ufw` when missing.
+ *   1. Validate/install firewall tooling when missing.
  *   2. Set default policies.
  *   3. Allow SSH, required web ports, and optional extra ports.
- *   4. Enable UFW non-interactively.
+ *   4. Enable the configured firewall.
  *
  * All remote-stage failures are wrapped with `FIREWALL_*` prefixes for
  * easier CI log inspection.
  */
 async function configureFirewall(options) {
-    const { host, user, privateKey, ipv6Only = false, extraPorts = [], } = options;
+    const { host, user, privateKey, ipv6Only = false, extraPorts = [], strategy = createDebianStrategy(), } = options;
     const normalizedExtraPorts = extraPorts.map((port) => normalizeExtraPort(port));
     const result = {
         firewallEnabled: false,
         rulesApplied: 0,
     };
     await withLogGroup("Configure firewall", async () => {
-        lib_core.info(`Preparing UFW on ${host}${ipv6Only ? " (IPv6-only mode)" : ""}…`);
+        lib_core.info(`Preparing firewall on ${host}${ipv6Only ? " (IPv6-only mode)" : ""}…`);
         await withKeyFile(privateKey, async (keyPath) => {
-            await withLogGroup("Validate/install UFW", async () => {
-                lib_core.info(`[${FIREWALL_ERRORS.INSTALL}] Ensuring UFW is installed…`);
-                await runFirewallCommand(keyPath, user, host, "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1", FIREWALL_ERRORS.INSTALL, ipv6Only);
-                lib_core.info(`[${FIREWALL_ERRORS.INSTALL}] UFW is available.`);
+            await withLogGroup("Validate/install firewall", async () => {
+                lib_core.info(`[${FIREWALL_ERRORS.INSTALL}] Ensuring firewall tooling is installed…`);
+                await runFirewallCommand(keyPath, user, host, strategy.firewall.install(), FIREWALL_ERRORS.INSTALL, ipv6Only);
+                lib_core.info(`[${FIREWALL_ERRORS.INSTALL}] Firewall tooling is available.`);
             });
             await withLogGroup("Set firewall defaults", async () => {
                 lib_core.info(`[${FIREWALL_ERRORS.DEFAULTS}] Setting deny-incoming / allow-outgoing defaults…`);
-                await runFirewallCommand(keyPath, user, host, "sudo ufw default deny incoming && sudo ufw default allow outgoing", FIREWALL_ERRORS.DEFAULTS, ipv6Only);
+                await runFirewallCommand(keyPath, user, host, strategy.firewall.defaults(), FIREWALL_ERRORS.DEFAULTS, ipv6Only);
                 lib_core.info(`[${FIREWALL_ERRORS.DEFAULTS}] Default policies configured.`);
             });
             await withLogGroup("Allow SSH access", async () => {
                 lib_core.info(`[${FIREWALL_ERRORS.SSH_RULE}] Allowing SSH on 22/tcp…`);
-                await runFirewallCommand(keyPath, user, host, "sudo ufw allow 22/tcp", FIREWALL_ERRORS.SSH_RULE, ipv6Only);
+                await runFirewallCommand(keyPath, user, host, strategy.firewall.allow("22/tcp"), FIREWALL_ERRORS.SSH_RULE, ipv6Only);
                 result.rulesApplied += 1;
                 lib_core.info(`[${FIREWALL_ERRORS.SSH_RULE}] SSH rule configured.`);
             });
             await withLogGroup("Allow web ports", async () => {
                 lib_core.info(`[${FIREWALL_ERRORS.WEB_RULES}] Allowing 80/tcp…`);
-                await runFirewallCommand(keyPath, user, host, "sudo ufw allow 80/tcp", FIREWALL_ERRORS.WEB_RULES, ipv6Only);
+                await runFirewallCommand(keyPath, user, host, strategy.firewall.allow("80/tcp"), FIREWALL_ERRORS.WEB_RULES, ipv6Only);
                 result.rulesApplied += 1;
                 lib_core.info(`[${FIREWALL_ERRORS.WEB_RULES}] Allowing 443/tcp…`);
-                await runFirewallCommand(keyPath, user, host, "sudo ufw allow 443/tcp", FIREWALL_ERRORS.WEB_RULES, ipv6Only);
+                await runFirewallCommand(keyPath, user, host, strategy.firewall.allow("443/tcp"), FIREWALL_ERRORS.WEB_RULES, ipv6Only);
                 result.rulesApplied += 1;
                 lib_core.info(`[${FIREWALL_ERRORS.WEB_RULES}] Required web rules configured.`);
             });
@@ -45535,16 +45784,16 @@ async function configureFirewall(options) {
                 }
                 for (const port of normalizedExtraPorts) {
                     lib_core.info(`[${FIREWALL_ERRORS.EXTRA_RULES}] Allowing ${port}…`);
-                    await runFirewallCommand(keyPath, user, host, `sudo ufw allow ${shellQuote(port)}`, FIREWALL_ERRORS.EXTRA_RULES, ipv6Only);
+                    await runFirewallCommand(keyPath, user, host, strategy.firewall.allow(port), FIREWALL_ERRORS.EXTRA_RULES, ipv6Only);
                     result.rulesApplied += 1;
                 }
                 lib_core.info(`[${FIREWALL_ERRORS.EXTRA_RULES}] Extra port rules configured.`);
             });
             await withLogGroup("Enable firewall", async () => {
-                lib_core.info(`[${FIREWALL_ERRORS.ENABLE}] Enabling UFW…`);
-                await runFirewallCommand(keyPath, user, host, "sudo ufw --force enable", FIREWALL_ERRORS.ENABLE, ipv6Only);
+                lib_core.info(`[${FIREWALL_ERRORS.ENABLE}] Enabling firewall…`);
+                await runFirewallCommand(keyPath, user, host, strategy.firewall.enable(), FIREWALL_ERRORS.ENABLE, ipv6Only);
                 result.firewallEnabled = true;
-                lib_core.info(`[${FIREWALL_ERRORS.ENABLE}] UFW enabled successfully.`);
+                lib_core.info(`[${FIREWALL_ERRORS.ENABLE}] Firewall enabled successfully.`);
             });
         });
     });
@@ -45552,6 +45801,7 @@ async function configureFirewall(options) {
 }
 //# sourceMappingURL=firewall.js.map
 ;// CONCATENATED MODULE: ./lib/pipeline.js
+
 
 
 
@@ -45668,6 +45918,22 @@ async function deployPipeline(inputs) {
         await waitForSsh(keyPath, inputs.sshUser, server.ip, effectiveIpv6Only);
     });
     lib_core.info("SSH is ready.");
+    lib_core.info(`[OS_DETECT] Starting remote OS detection for ${server.ip}...`);
+    let strategy;
+    try {
+        strategy = await detectOs({
+            image: inputs.image,
+            host: server.ip,
+            user: inputs.sshUser,
+            privateKey: inputs.sshPrivateKey,
+            ipv6Only: effectiveIpv6Only,
+        });
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`DEPLOY_PIPELINE_osDetect: ${msg}`);
+    }
+    lib_core.info(`[OS_DETECT] Using ${strategy.family} strategy family.`);
     const stages = activeStages(inputs);
     const total = stages.length;
     let setupResult = { unitInstalled: false, serviceRestarted: false };
@@ -45685,6 +45951,7 @@ async function deployPipeline(inputs) {
                         host: server.ip,
                         user: inputs.sshUser,
                         privateKey: inputs.sshPrivateKey,
+                        strategy,
                         ipv6Only: effectiveIpv6Only,
                     });
                     break;
@@ -45819,6 +46086,7 @@ async function deployPipeline(inputs) {
                         privateKey: inputs.sshPrivateKey,
                         ipv6Only: effectiveIpv6Only,
                         extraPorts: inputs.firewallExtraPorts,
+                        strategy,
                     });
                     lib_core.info("Firewall configured and enabled.");
                     break;
