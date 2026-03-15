@@ -8,6 +8,7 @@ import {
   installSystemdUnit,
   setTargetOwnership,
 } from "./deploy/remoteSetup.js";
+import { detectOs } from "./deploy/osDetect.js";
 import { installPackages } from "./deploy/packageInstall.js";
 import { rsyncDeploy } from "./deploy/rsync.js";
 import { deployPodman } from "./deploy/podman.js";
@@ -19,6 +20,7 @@ import {
 } from "./deploy/haproxy.js";
 import { configureFirewall } from "./deploy/firewall.js";
 import { waitForSsh, withKeyFile } from "./deploy/ssh.js";
+import type { OsStrategy } from "./deploy/osStrategy.js";
 import type { ServiceConfig } from "./validate.js";
 
 /* ------------------------------------------------------------------ */
@@ -192,6 +194,22 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
   });
   core.info("SSH is ready.");
 
+  core.info(`[OS_DETECT] Starting remote OS detection for ${server.ip}...`);
+  let strategy: OsStrategy;
+  try {
+    strategy = await detectOs({
+      image: inputs.image,
+      host: server.ip,
+      user: inputs.sshUser,
+      privateKey: inputs.sshPrivateKey,
+      ipv6Only: effectiveIpv6Only,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`DEPLOY_PIPELINE_osDetect: ${msg}`);
+  }
+  core.info(`[OS_DETECT] Using ${strategy.family} strategy family.`);
+
   const stages = activeStages(inputs);
   const total = stages.length;
   let setupResult = { unitInstalled: false, serviceRestarted: false };
@@ -212,6 +230,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
             host: server.ip,
             user: inputs.sshUser,
             privateKey: inputs.sshPrivateKey,
+            strategy,
             ipv6Only: effectiveIpv6Only,
           });
           break;
@@ -362,6 +381,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
             privateKey: inputs.sshPrivateKey,
             ipv6Only: effectiveIpv6Only,
             extraPorts: inputs.firewallExtraPorts,
+            strategy,
           });
           core.info("Firewall configured and enabled.");
           break;

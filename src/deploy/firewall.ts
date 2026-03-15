@@ -1,11 +1,13 @@
 import * as core from "@actions/core";
-import { withKeyFile, sshExec, shellQuote } from "./ssh.js";
+import type { OsStrategy } from "./osStrategy.js";
+import { createDebianStrategy } from "./strategies/debian.js";
+import { withKeyFile, sshExec } from "./ssh.js";
 
 /* ------------------------------------------------------------------ */
 /*  Option / result interfaces                                        */
 /* ------------------------------------------------------------------ */
 
-/** Options for configuring UFW on a remote host. */
+/** Options for configuring the remote firewall. */
 export interface FirewallOptions {
   /** Server IP or hostname. */
   host: string;
@@ -17,11 +19,13 @@ export interface FirewallOptions {
   ipv6Only?: boolean;
   /** Additional ports to allow (defaults to TCP when protocol is omitted). */
   extraPorts?: ReadonlyArray<number | string>;
+  /** OS-specific firewall command strategy (defaults to Debian/UFW behavior). */
+  strategy?: OsStrategy;
 }
 
 /** Result returned after firewall configuration completes. */
 export interface FirewallResult {
-  /** Whether UFW was enabled successfully. */
+  /** Whether the firewall was enabled successfully. */
   firewallEnabled: boolean;
   /** Number of allow-rules applied successfully. */
   rulesApplied: number;
@@ -98,13 +102,13 @@ async function runFirewallCommand(
 /* ------------------------------------------------------------------ */
 
 /**
- * Install and configure UFW on a remote host.
+ * Install and configure the firewall on a remote host.
  *
  * Stages:
- *   1. Validate/install `ufw` when missing.
+ *   1. Validate/install firewall tooling when missing.
  *   2. Set default policies.
  *   3. Allow SSH, required web ports, and optional extra ports.
- *   4. Enable UFW non-interactively.
+ *   4. Enable the configured firewall.
  *
  * All remote-stage failures are wrapped with `FIREWALL_*` prefixes for
  * easier CI log inspection.
@@ -118,6 +122,7 @@ export async function configureFirewall(
     privateKey,
     ipv6Only = false,
     extraPorts = [],
+    strategy = createDebianStrategy(),
   } = options;
 
   const normalizedExtraPorts = extraPorts.map((port) => normalizeExtraPort(port));
@@ -128,20 +133,20 @@ export async function configureFirewall(
   };
 
   await withLogGroup("Configure firewall", async () => {
-    core.info(`Preparing UFW on ${host}${ipv6Only ? " (IPv6-only mode)" : ""}…`);
+    core.info(`Preparing firewall on ${host}${ipv6Only ? " (IPv6-only mode)" : ""}…`);
 
     await withKeyFile(privateKey, async (keyPath) => {
-      await withLogGroup("Validate/install UFW", async () => {
-        core.info(`[${FIREWALL_ERRORS.INSTALL}] Ensuring UFW is installed…`);
+      await withLogGroup("Validate/install firewall", async () => {
+        core.info(`[${FIREWALL_ERRORS.INSTALL}] Ensuring firewall tooling is installed…`);
         await runFirewallCommand(
           keyPath,
           user,
           host,
-          "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1",
+          strategy.firewall.install(),
           FIREWALL_ERRORS.INSTALL,
           ipv6Only,
         );
-        core.info(`[${FIREWALL_ERRORS.INSTALL}] UFW is available.`);
+        core.info(`[${FIREWALL_ERRORS.INSTALL}] Firewall tooling is available.`);
       });
 
       await withLogGroup("Set firewall defaults", async () => {
@@ -150,7 +155,7 @@ export async function configureFirewall(
           keyPath,
           user,
           host,
-          "sudo ufw default deny incoming && sudo ufw default allow outgoing",
+          strategy.firewall.defaults(),
           FIREWALL_ERRORS.DEFAULTS,
           ipv6Only,
         );
@@ -163,7 +168,7 @@ export async function configureFirewall(
           keyPath,
           user,
           host,
-          "sudo ufw allow 22/tcp",
+          strategy.firewall.allow("22/tcp"),
           FIREWALL_ERRORS.SSH_RULE,
           ipv6Only,
         );
@@ -177,7 +182,7 @@ export async function configureFirewall(
           keyPath,
           user,
           host,
-          "sudo ufw allow 80/tcp",
+          strategy.firewall.allow("80/tcp"),
           FIREWALL_ERRORS.WEB_RULES,
           ipv6Only,
         );
@@ -188,7 +193,7 @@ export async function configureFirewall(
           keyPath,
           user,
           host,
-          "sudo ufw allow 443/tcp",
+          strategy.firewall.allow("443/tcp"),
           FIREWALL_ERRORS.WEB_RULES,
           ipv6Only,
         );
@@ -209,7 +214,7 @@ export async function configureFirewall(
             keyPath,
             user,
             host,
-            `sudo ufw allow ${shellQuote(port)}`,
+            strategy.firewall.allow(port),
             FIREWALL_ERRORS.EXTRA_RULES,
             ipv6Only,
           );
@@ -220,17 +225,17 @@ export async function configureFirewall(
       });
 
       await withLogGroup("Enable firewall", async () => {
-        core.info(`[${FIREWALL_ERRORS.ENABLE}] Enabling UFW…`);
+        core.info(`[${FIREWALL_ERRORS.ENABLE}] Enabling firewall…`);
         await runFirewallCommand(
           keyPath,
           user,
           host,
-          "sudo ufw --force enable",
+          strategy.firewall.enable(),
           FIREWALL_ERRORS.ENABLE,
           ipv6Only,
         );
         result.firewallEnabled = true;
-        core.info(`[${FIREWALL_ERRORS.ENABLE}] UFW enabled successfully.`);
+        core.info(`[${FIREWALL_ERRORS.ENABLE}] Firewall enabled successfully.`);
       });
     });
   });

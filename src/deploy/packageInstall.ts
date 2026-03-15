@@ -1,4 +1,6 @@
 import * as core from "@actions/core";
+import type { OsStrategy } from "./osStrategy.js";
+import { createDebianStrategy } from "./strategies/debian.js";
 import { withKeyFile, sshExec, shellQuote } from "./ssh.js";
 
 /* ------------------------------------------------------------------ */
@@ -15,6 +17,8 @@ export interface PackageInstallOptions {
   privateKey: string;
   /** Packages to install. Defaults to {@link DEFAULT_PACKAGES}. */
   packages?: string[];
+  /** OS-specific command strategy. Defaults to Debian helpers. */
+  strategy?: OsStrategy;
   /** When true the host is an IPv6 address — forces ssh to use `-6`. */
   ipv6Only?: boolean;
 }
@@ -25,13 +29,6 @@ export interface PackageInstallOptions {
 
 /** Default packages provisioned on every server. */
 export const DEFAULT_PACKAGES: readonly string[] = ["podman", "haproxy"];
-
-/**
- * Valid Debian package name: lowercase alphanumeric start, followed by
- * lowercase alphanumeric, dots, plus signs, or hyphens.  Minimum 2 chars.
- * @see https://www.debian.org/doc/debian-policy/ch-controlfields.html#source
- */
-const VALID_PKG_RE = /^[a-z0-9][a-z0-9.+-]+$/;
 
 /* ------------------------------------------------------------------ */
 /*  Stage / error prefixes                                            */
@@ -48,15 +45,18 @@ const STAGE_VALIDATE = "PACKAGE_INSTALL_VALIDATE";
 
 /**
  * Validate that `packages` is non-empty and every entry conforms to the
- * Debian package naming policy.  Throws with a `PACKAGE_INSTALL_VALIDATE:`
- * prefix on failure.
+ * selected strategy package naming policy. Throws with a
+ * `PACKAGE_INSTALL_VALIDATE:` prefix on failure.
  */
-function validatePackageNames(packages: readonly string[]): void {
+function validatePackageNames(
+  packages: readonly string[],
+  strategy: OsStrategy,
+): void {
   if (packages.length === 0) {
     throw new Error(`${STAGE_VALIDATE}: package list must not be empty`);
   }
   for (const name of packages) {
-    if (!VALID_PKG_RE.test(name)) {
+    if (!strategy.packages.packageNamePattern.test(name)) {
       throw new Error(
         `${STAGE_VALIDATE}: invalid package name: ${JSON.stringify(name)}`,
       );
@@ -73,8 +73,8 @@ function validatePackageNames(packages: readonly string[]): void {
  *
  * Stages:
  *   1. Wait for cloud-init to finish (so apt locks are released).
- *   2. `apt-get update && apt-get install` the requested packages.
- *   3. Verify each package is installed via `dpkg -s`.
+ *   2. Install the requested packages via the selected OS strategy.
+ *   3. Verify each package is installed via the selected OS strategy.
  *
  * All errors are prefixed with their stage label (`PACKAGE_INSTALL_*`)
  * for easy identification in CI logs.
@@ -87,10 +87,11 @@ export async function installPackages(
     user,
     privateKey,
     packages = DEFAULT_PACKAGES,
+    strategy = createDebianStrategy(),
     ipv6Only = false,
   } = opts;
 
-  validatePackageNames(packages);
+  validatePackageNames(packages, strategy);
 
   await withKeyFile(privateKey, async (keyPath) => {
     // Stage 1: Wait for cloud-init readiness
@@ -111,6 +112,7 @@ export async function installPackages(
 
     // Stage 2: Install packages
     const pkgList = packages.map((p) => shellQuote(p)).join(" ");
+    const installCommand = strategy.packages.install(packages);
     core.info(
       `[${STAGE_INSTALL}] Installing packages: ${pkgList}…`,
     );
@@ -119,7 +121,7 @@ export async function installPackages(
         keyPath,
         user,
         host,
-        `sudo apt-get update -qq && sudo apt-get install -y -qq ${pkgList}`,
+        installCommand,
         ipv6Only,
       );
     } catch (err: unknown) {
@@ -132,7 +134,13 @@ export async function installPackages(
     core.info(`[${STAGE_VERIFY}] Verifying installed packages…`);
     try {
       for (const pkg of packages) {
-        await sshExec(keyPath, user, host, `dpkg -s ${shellQuote(pkg)}`, ipv6Only);
+        await sshExec(
+          keyPath,
+          user,
+          host,
+          strategy.packages.verify(pkg),
+          ipv6Only,
+        );
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

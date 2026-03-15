@@ -45,6 +45,8 @@ import {
   installPackages,
   DEFAULT_PACKAGES,
 } from "../src/deploy/packageInstall";
+import { createDebianStrategy } from "../src/deploy/strategies/debian";
+import { createFedoraStrategy } from "../src/deploy/strategies/fedora";
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -58,6 +60,9 @@ const BASE_OPTS = {
   user: "root",
   privateKey: "TEST_KEY",
 } as const;
+
+const debianStrategy = createDebianStrategy();
+const fedoraStrategy = createFedoraStrategy();
 
 /** Extract the remote command (last SSH arg) from a given exec mock call. */
 function remoteCmd(callIndex: number): string {
@@ -90,7 +95,7 @@ beforeEach(() => {
 
 describe("installPackages — success path", () => {
   it("runs cloud-init wait, apt-get install, and dpkg verify for default packages", async () => {
-    await installPackages(BASE_OPTS);
+    await installPackages({ ...BASE_OPTS, strategy: debianStrategy });
 
     // Stage 1: cloud-init
     expect(remoteCmd(0)).toBe("cloud-init status --wait");
@@ -107,7 +112,11 @@ describe("installPackages — success path", () => {
   });
 
   it("accepts a custom packages list", async () => {
-    await installPackages({ ...BASE_OPTS, packages: ["nginx"] });
+    await installPackages({
+      ...BASE_OPTS,
+      packages: ["nginx"],
+      strategy: debianStrategy,
+    });
 
     expect(remoteCmd(1)).toBe(
       "sudo apt-get update -qq && sudo apt-get install -y -qq 'nginx'",
@@ -115,8 +124,31 @@ describe("installPackages — success path", () => {
     expect(remoteCmd(2)).toBe("dpkg -s 'nginx'");
   });
 
-  it("logs stage labels with PACKAGE_INSTALL_ prefix", async () => {
+  it("defaults to Debian strategy when omitted", async () => {
     await installPackages(BASE_OPTS);
+
+    expect(remoteCmd(1)).toBe(
+      `sudo apt-get update -qq && sudo apt-get install -y -qq ${DEFAULT_PACKAGES.map((p) => `'${p}'`).join(" ")}`,
+    );
+    expect(remoteCmd(2)).toBe(`dpkg -s '${DEFAULT_PACKAGES[0]}'`);
+  });
+
+  it("uses Fedora strategy commands when provided", async () => {
+    await installPackages({
+      ...BASE_OPTS,
+      packages: ["podman", "haproxy"],
+      strategy: fedoraStrategy,
+    });
+
+    expect(remoteCmd(1)).toBe(
+      "sudo dnf install -y --setopt=install_weak_deps=False 'podman' 'haproxy'",
+    );
+    expect(remoteCmd(2)).toBe("rpm -q 'podman'");
+    expect(remoteCmd(3)).toBe("rpm -q 'haproxy'");
+  });
+
+  it("logs stage labels with PACKAGE_INSTALL_ prefix", async () => {
+    await installPackages({ ...BASE_OPTS, strategy: debianStrategy });
 
     expect(core.info).toHaveBeenCalledWith(
       expect.stringContaining("[PACKAGE_INSTALL_CLOUD_INIT]"),
@@ -143,7 +175,9 @@ describe("installPackages — cloud-init failure", () => {
   it("throws with PACKAGE_INSTALL_CLOUD_INIT prefix", async () => {
     vi.mocked(exec.exec).mockRejectedValueOnce(new Error("timed out"));
 
-    await expect(installPackages(BASE_OPTS)).rejects.toThrow(
+    await expect(
+      installPackages({ ...BASE_OPTS, strategy: debianStrategy }),
+    ).rejects.toThrow(
       /PACKAGE_INSTALL_CLOUD_INIT/,
     );
   });
@@ -153,7 +187,9 @@ describe("installPackages — cloud-init failure", () => {
       new Error("cloud-init not found"),
     );
 
-    await expect(installPackages(BASE_OPTS)).rejects.toThrow(
+    await expect(
+      installPackages({ ...BASE_OPTS, strategy: debianStrategy }),
+    ).rejects.toThrow(
       /cloud-init not found/,
     );
   });
@@ -173,7 +209,9 @@ describe("installPackages — install failure", () => {
       })
       .mockRejectedValueOnce(new Error("apt-get failed"));
 
-    await expect(installPackages(BASE_OPTS)).rejects.toThrow(
+    await expect(
+      installPackages({ ...BASE_OPTS, strategy: debianStrategy }),
+    ).rejects.toThrow(
       /PACKAGE_INSTALL_INSTALL/,
     );
   });
@@ -197,7 +235,9 @@ describe("installPackages — verify failure", () => {
       })
       .mockRejectedValueOnce(new Error("package not found"));
 
-    await expect(installPackages(BASE_OPTS)).rejects.toThrow(
+    await expect(
+      installPackages({ ...BASE_OPTS, strategy: debianStrategy }),
+    ).rejects.toThrow(
       /PACKAGE_INSTALL_VERIFY/,
     );
   });
@@ -214,7 +254,9 @@ describe("installPackages — verify failure", () => {
       })
       .mockRejectedValueOnce(new Error("dpkg: package nginx not installed"));
 
-    await expect(installPackages(BASE_OPTS)).rejects.toThrow(
+    await expect(
+      installPackages({ ...BASE_OPTS, strategy: debianStrategy }),
+    ).rejects.toThrow(
       /dpkg: package nginx not installed/,
     );
   });
@@ -255,8 +297,27 @@ describe("installPackages — input validation", () => {
     ).rejects.toThrow(/PACKAGE_INSTALL_VALIDATE.*invalid package name/);
   });
 
+  it("accepts Fedora-valid package names with uppercase letters", async () => {
+    await expect(
+      installPackages({
+        ...BASE_OPTS,
+        packages: ["Nginx"],
+        strategy: fedoraStrategy,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(remoteCmd(1)).toBe(
+      "sudo dnf install -y --setopt=install_weak_deps=False 'Nginx'",
+    );
+    expect(remoteCmd(2)).toBe("rpm -q 'Nginx'");
+  });
+
   it("does not create a key file when validation fails", async () => {
-    await installPackages({ ...BASE_OPTS, packages: [] }).catch(() => {});
+    await installPackages({
+      ...BASE_OPTS,
+      packages: [],
+      strategy: debianStrategy,
+    }).catch(() => {});
 
     expect(fs.mkdtempSync).not.toHaveBeenCalled();
     expect(fs.writeFileSync).not.toHaveBeenCalled();

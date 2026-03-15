@@ -91,6 +91,7 @@ import {
   ensureHaproxyFragService,
 } from "../src/deploy/haproxy.js";
 import { configureFirewall } from "../src/deploy/firewall.js";
+import { detectOs } from "../src/deploy/osDetect.js";
 import { withKeyFile, waitForSsh } from "../src/deploy/ssh.js";
 import {
   deployPipeline,
@@ -99,6 +100,11 @@ import {
   STAGE_ORDER,
   type ActionInputs,
 } from "../src/pipeline";
+import type { OsStrategy } from "../src/deploy/osStrategy.js";
+
+vi.mock("../src/deploy/osDetect.js", () => ({
+  detectOs: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -115,6 +121,21 @@ const FAKE_SSH_KEY = {
   id: 7,
   name: "myproject-deploy",
   fingerprint: "aa:bb:cc",
+};
+
+const DEBIAN_STRATEGY: OsStrategy = {
+  family: "debian",
+  packages: {
+    packageNamePattern: /^[a-z0-9][a-z0-9+.-]*$/,
+    install: vi.fn(() => "apt-get update && apt-get install -y podman haproxy"),
+    verify: vi.fn((pkg: string) => `dpkg -s ${pkg}`),
+  },
+  firewall: {
+    install: vi.fn(() => "apt-get update && apt-get install -y ufw"),
+    defaults: vi.fn(() => "ufw default deny incoming && ufw default allow outgoing"),
+    allow: vi.fn((rule: string) => `ufw allow ${rule}`),
+    enable: vi.fn(() => "ufw --force enable"),
+  },
 };
 
 /** Minimal valid inputs with all optional features disabled. */
@@ -194,6 +215,7 @@ beforeEach(() => {
   vi.mocked(createClient).mockReturnValue({} as ReturnType<typeof createClient>);
   vi.mocked(ensureSshKey).mockResolvedValue(FAKE_SSH_KEY);
   vi.mocked(findOrCreateServer).mockResolvedValue(FAKE_SERVER);
+  vi.mocked(detectOs).mockResolvedValue(DEBIAN_STRATEGY);
 
   // Default deploy mocks — all stages succeed
   vi.mocked(installPackages).mockResolvedValue(undefined);
@@ -699,6 +721,24 @@ describe("deployPipeline — Hetzner provisioning", () => {
     expect(core.info).toHaveBeenCalledWith("SSH is ready.");
   });
 
+  it("detects OS after SSH readiness using expected args", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    const waitForSshCall = vi.mocked(waitForSsh).mock.invocationCallOrder[0];
+    const detectOsCall = vi.mocked(detectOs).mock.invocationCallOrder[0];
+
+    expect(detectOs).toHaveBeenCalledWith({
+      image: "ubuntu-24.04",
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      ipv6Only: false,
+    });
+    expect(waitForSshCall).toBeLessThan(detectOsCall);
+    expect(core.info).toHaveBeenCalledWith("[OS_DETECT] Starting remote OS detection for 1.2.3.4...");
+    expect(core.info).toHaveBeenCalledWith("[OS_DETECT] Using debian strategy family.");
+  });
+
   it("waits for SSH using the temporary key path and effective IPv6 mode", async () => {
     await deployPipeline(BASE_INPUTS);
 
@@ -805,6 +845,17 @@ describe("deployPipeline — error propagation", () => {
     expect(installPackages).not.toHaveBeenCalled();
     expect(ensureTargetDir).not.toHaveBeenCalled();
     expect(rsyncDeploy).not.toHaveBeenCalled();
+  });
+
+  it("wraps detectOs failure with DEPLOY_PIPELINE_osDetect prefix", async () => {
+    vi.mocked(detectOs).mockRejectedValueOnce(new Error("OS_DETECT: unsupported image"));
+
+    await expect(deployPipeline(BASE_INPUTS)).rejects.toThrow(
+      /^DEPLOY_PIPELINE_osDetect: OS_DETECT: unsupported image$/,
+    );
+
+    expect(installPackages).not.toHaveBeenCalled();
+    expect(configureFirewall).not.toHaveBeenCalled();
   });
 
   it("wraps installPackages failure with DEPLOY_PIPELINE_installPackages prefix", async () => {
@@ -1050,6 +1101,7 @@ describe("deployPipeline — stage arguments", () => {
       host: "1.2.3.4",
       user: "deploy",
       privateKey: "PRIVATE_KEY",
+      strategy: DEBIAN_STRATEGY,
       ipv6Only: false,
     });
   });
@@ -1210,6 +1262,7 @@ describe("deployPipeline — stage arguments", () => {
       privateKey: "PRIVATE_KEY",
       ipv6Only: false,
       extraPorts: undefined,
+      strategy: DEBIAN_STRATEGY,
     });
   });
 
@@ -1222,6 +1275,7 @@ describe("deployPipeline — stage arguments", () => {
       privateKey: "PRIVATE_KEY",
       ipv6Only: false,
       extraPorts: ["8080", "53/udp"],
+      strategy: DEBIAN_STRATEGY,
     });
   });
 

@@ -27,6 +27,8 @@ vi.mock("../src/deploy/ssh.js", () => ({
 
 import * as core from "@actions/core";
 import * as ssh from "../src/deploy/ssh.js";
+import { createDebianStrategy } from "../src/deploy/strategies/debian";
+import { createFedoraStrategy } from "../src/deploy/strategies/fedora";
 
 import {
   configureFirewall,
@@ -43,6 +45,7 @@ const BASE_OPTS = {
   host: "1.2.3.4",
   user: "root",
   privateKey: "TEST_PRIVATE_KEY",
+  strategy: createDebianStrategy(),
 } as const;
 
 function sshRemoteCmd(callIndex: number): string {
@@ -181,17 +184,63 @@ describe("configureFirewall", () => {
       rulesApplied: 5,
     });
 
-    expect(ssh.shellQuote).toHaveBeenNthCalledWith(1, "8080/tcp");
-    expect(ssh.shellQuote).toHaveBeenNthCalledWith(2, "53/udp");
     expect(sshCallSlice(0)).toEqual([
       "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1",
       "sudo ufw default deny incoming && sudo ufw default allow outgoing",
       "sudo ufw allow 22/tcp",
       "sudo ufw allow 80/tcp",
       "sudo ufw allow 443/tcp",
-      "sudo ufw allow '8080/tcp'",
-      "sudo ufw allow '53/udp'",
+      "sudo ufw allow 8080/tcp",
+      "sudo ufw allow 53/udp",
       "sudo ufw --force enable",
+    ]);
+  });
+
+  it("defaults to Debian strategy behavior when strategy is omitted", async () => {
+    const result = await configureFirewall({
+      host: "1.2.3.4",
+      user: "root",
+      privateKey: "TEST_PRIVATE_KEY",
+    });
+
+    expect(result).toEqual({
+      firewallEnabled: true,
+      rulesApplied: 3,
+    });
+
+    expect(sshCallSlice(0)).toEqual([
+      "command -v ufw >/dev/null 2>&1 || (sudo apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ufw) && command -v ufw >/dev/null 2>&1",
+      "sudo ufw default deny incoming && sudo ufw default allow outgoing",
+      "sudo ufw allow 22/tcp",
+      "sudo ufw allow 80/tcp",
+      "sudo ufw allow 443/tcp",
+      "sudo ufw --force enable",
+    ]);
+  });
+
+  it("uses Fedora firewall helpers when a Fedora strategy is provided", async () => {
+    const result = await configureFirewall({
+      host: "1.2.3.4",
+      user: "root",
+      privateKey: "TEST_PRIVATE_KEY",
+      strategy: createFedoraStrategy(),
+      extraPorts: [8080, "53/udp"],
+    });
+
+    expect(result).toEqual({
+      firewallEnabled: true,
+      rulesApplied: 5,
+    });
+
+    expect(sshCallSlice(0)).toEqual([
+      "command -v firewall-cmd >/dev/null 2>&1 || (sudo dnf install -y --setopt=install_weak_deps=False firewalld && sudo systemctl enable --now firewalld) && command -v firewall-cmd >/dev/null 2>&1",
+      "sudo firewall-cmd --set-default-zone=drop",
+      "sudo firewall-cmd --permanent --add-port=22/tcp",
+      "sudo firewall-cmd --permanent --add-port=80/tcp",
+      "sudo firewall-cmd --permanent --add-port=443/tcp",
+      "sudo firewall-cmd --permanent --add-port=8080/tcp",
+      "sudo firewall-cmd --permanent --add-port=53/udp",
+      "sudo firewall-cmd --reload",
     ]);
   });
 
