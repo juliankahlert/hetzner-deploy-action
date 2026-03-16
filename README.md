@@ -13,6 +13,7 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 - **rsync deploy** — fast incremental file transfer to the remote host
 - **Podman Quadlet** — deploy OCI containers managed by systemd (set `container_image`)
 - **HAProxy** — upload a full config or append a fragment to `/etc/haproxy/conf.d/`
+- **Certbot ACME** — automatic Let's Encrypt integration via HAProxy; deploys a bundled certbot fragment that routes HTTP-01 challenges to a local certbot listener
 - **Firewall** — OS-aware firewall setup (UFW on Debian/Ubuntu, firewalld on Fedora) with sensible defaults and optional extra ports
 - **systemd service** — install and restart a systemd unit for non-container workloads
 - **IPv6-only support** — provision servers without a public IPv4 address
@@ -52,11 +53,17 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 | `target_dir` | no | `/opt/app` | Remote directory where files are placed. |
 | `service` | no | — | Structured YAML map configuring the systemd service unit. Keys: `name`, `exec-start`, `type`, `restart`, `restart-sec`, `user`, `working-directory`. See [Structured `service` input](#structured-service-input) below. Overrides the legacy flat `service_name` input. |
 | `service_name` | no | — | **Deprecated.** Legacy alias — sets only the service name. Retained for backward compatibility; prefer the structured `service` input instead. Ignored when `service` is provided. |
+| `service_type` | no | `simple` | **Deprecated.** Legacy flat input for the systemd `Type=` directive (`simple`, `exec`, `oneshot`, …). Overridden when the structured `service` input includes `type`. |
+| `service_restart` | no | `on-failure` | **Deprecated.** Legacy flat input for the systemd `Restart=` directive (`no`, `always`, `on-failure`, …). Overridden when the structured `service` input includes `restart`. |
+| `service_restart_sec` | no | `5` | **Deprecated.** Legacy flat input for the systemd `RestartSec=` directive (seconds). Overridden when the structured `service` input includes `restart-sec`. |
+| `exec_start` | no | — | **Deprecated.** Legacy flat input for the systemd `ExecStart=` command. When omitted and no structured `service.exec-start` is set, a placeholder command is used and the action emits a warning. Overridden when the structured `service` input includes `exec-start`. |
 | `container_image` | no | — | OCI image reference. Enables the Podman stage. |
 | `container_port` | no | `8080` | Port mapping for Podman, e.g. `8080` or `8080:80`. |
 | `haproxy_cfg` | no | — | Path to a full HAProxy config. Enables the HAProxy stage. |
 | `haproxy_fragment` | no | — | Path to an HAProxy fragment to append. When set without `haproxy_cfg`, the action auto-deploys the bundled `templates/haproxy-base.cfg` as `/etc/haproxy/haproxy.cfg` so fragments are active immediately. |
 | `haproxy_fragment_name` | no | `fragment` | Remote filename for the HAProxy fragment. |
+| `certbot` | no | `false` | Enable certbot ACME support. When `true`, the action installs the `certbot` package, deploys a bundled HAProxy fragment that routes `/.well-known/acme-challenge/` requests to a local certbot listener, and triggers a single final `haproxy-frag` reload after all fragments are in place. Activates the HAProxy stage even when `haproxy_cfg` and `haproxy_fragment` are both absent. |
+| `certbot_port` | no | `8888` | Port on `127.0.0.1` where certbot's standalone HTTP-01 server listens. Rendered into the bundled certbot HAProxy fragment. Only meaningful when `certbot` is `true`. Must be an integer between 1 and 65535. |
 | `firewall_enabled` | no | `true` | Enable the firewall stage (UFW on Debian/Ubuntu, firewalld on Fedora). |
 | `firewall_extra_ports` | no | — | Comma-separated extra ports to allow, e.g. `8080, 8443`. |
 
@@ -98,7 +105,7 @@ The `service` input accepts a YAML map that configures every aspect of the gener
       working-directory: /opt/worker
 ```
 
-> **Backward compatibility:** If the legacy `service_name` input is provided and `service` is absent, the action treats it as `service: { name: <service_name> }` with all other keys at their defaults. When both are provided, `service` takes precedence and `service_name` is ignored.
+> **Backward compatibility:** The legacy flat inputs `service_name`, `service_type`, `service_restart`, `service_restart_sec`, and `exec_start` are still supported. When `service` is absent, the action builds the service configuration from these flat inputs — e.g. `service_name` sets `name`, `exec_start` sets `exec-start`, and so on, with omitted keys falling back to their defaults. When the structured `service` input is provided, its keys take precedence over the corresponding flat inputs for any setting that both specify.
 
 **Service user and ownership behavior:**
 
@@ -134,7 +141,7 @@ The action executes a pipeline of ordered stages. Core stages always run; option
                              5. rsync deploy
                              6. Podman Quadlet     (if container_image)
                              7. systemd unit       (if service.name, no container)
-                             8. HAProxy            (if haproxy_cfg or haproxy_fragment)
+                             8. HAProxy + Certbot  (if haproxy_cfg, haproxy_fragment, or certbot)
                              9. Firewall           (if firewall_enabled)
 ```
 
@@ -147,10 +154,22 @@ The action executes a pipeline of ordered stages. Core stages always run; option
 | rsyncDeploy | Always |
 | podman | `container_image` is set |
 | systemd | `service.name` is set **and** `container_image` is absent |
-| haproxy | `haproxy_cfg` or `haproxy_fragment` is set |
+| haproxy | `haproxy_cfg`, `haproxy_fragment`, or `certbot` is set |
 | firewall | `firewall_enabled` is `true` (default) |
 
 > **Note:** When `container_image` is set, the Podman Quadlet manages the service via systemd. The standalone systemd stage is skipped to avoid conflicts.
+
+### Certbot ACME flow
+
+When `certbot=true`, the HAProxy stage extends its behavior to provision Let's Encrypt certificate automation alongside the reverse proxy:
+
+1. **Package installation** — the `certbot` system package is added to the install list automatically.
+2. **Base config** — if no `haproxy_cfg` is provided, the bundled base config is deployed (same as fragment-only mode).
+3. **Custom fragment (deferred reload)** — if `haproxy_fragment` is also set, the user's fragment is uploaded and validated but the `haproxy-frag` service reload is **deferred** so that only a single reload occurs after all fragments are in place.
+4. **Bundled certbot fragment** — the action deploys `templates/haproxy-certbot.cfg` to `/etc/haproxy/conf.d/certbot.cfg`, rendered with the configured `certbot_port` (default `8888`). This fragment binds port 80, matches ACME challenge paths (`/.well-known/acme-challenge/`), and forwards them to `127.0.0.1:<certbot_port>`.
+5. **Final reload** — the certbot fragment deployment performs the single `haproxy-frag` reload, activating both the custom and certbot fragments in one pass.
+
+> **Tip:** Set `certbot=true` without any `haproxy_fragment` when you only need ACME challenge routing. The action still deploys the base config and the certbot fragment, giving HAProxy a complete minimal configuration.
 
 ### IPv6 and runner compatibility
 
@@ -253,6 +272,39 @@ Validation covers both paths: the action runs `haproxy -c -f /etc/haproxy/haprox
     haproxy_fragment_name: my-backend
 ```
 
+### HAProxy fragment with Certbot
+
+Combine a custom HAProxy fragment with automatic ACME challenge routing. The action uploads your fragment first (without reloading), then deploys the bundled certbot fragment and triggers a single reload.
+
+```yaml
+- uses: julian-kahlert/hetzner-deploy-action@v1
+  with:
+    hcloud_token:          ${{ secrets.HCLOUD_TOKEN }}
+    ssh_private_key:       ${{ secrets.SSH_PRIVATE_KEY }}
+    public_key:            ${{ secrets.SSH_PUBLIC_KEY }}
+    server_name:           web-prod
+    project_tag:           website
+    haproxy_fragment:      ./haproxy/my-backend.cfg
+    haproxy_fragment_name: my-backend
+    certbot:               'true'
+    certbot_port:          '8888'
+```
+
+### Certbot-only (no custom fragment)
+
+Enable ACME challenge routing without a custom fragment. The action deploys the base config and the certbot fragment only.
+
+```yaml
+- uses: julian-kahlert/hetzner-deploy-action@v1
+  with:
+    hcloud_token:    ${{ secrets.HCLOUD_TOKEN }}
+    ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+    public_key:      ${{ secrets.SSH_PUBLIC_KEY }}
+    server_name:     web-prod
+    project_tag:     website
+    certbot:         'true'
+```
+
 ### Full stack with HAProxy and firewall
 
 ```yaml
@@ -320,6 +372,7 @@ templates/
   systemd.service       # Systemd unit template
   quadlet.container     # Podman Quadlet unit template
   haproxy-base.cfg      # Base HAProxy global/defaults configuration
+  haproxy-certbot.cfg   # Certbot ACME challenge HAProxy fragment template
 ```
 
 ### Build and test
