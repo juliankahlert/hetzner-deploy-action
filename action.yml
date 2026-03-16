@@ -83,6 +83,14 @@ inputs:
   haproxy_cfg:
     description: "Path to HAProxy config \u2014 enables the haproxy stage when set"
     required: false
+  certbot:
+    description: "String boolean to enable certbot ACME support"
+    required: false
+    default: 'false'
+  certbot_port:
+    description: String port for certbot ACME challenge handling
+    required: false
+    default: '8888'
   firewall_enabled:
     description: If true, enable the firewall stage
     required: false

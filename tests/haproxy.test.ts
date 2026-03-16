@@ -33,7 +33,9 @@ import * as ssh from "../src/deploy/ssh.js";
 import {
   deployHaproxy,
   deployHaproxyBase,
+  deployHaproxyCertbotFragment,
   deployHaproxyFragment,
+  deployHaproxyFragmentWithoutReload,
   ensureHaproxyFragService,
 } from "../src/deploy/haproxy";
 
@@ -47,10 +49,13 @@ const FRAGMENT_PATH = "/workspace/fragments/app.cfg";
 const REMOTE_CFG_DIR = "/etc/haproxy";
 const REMOTE_CFG_PATH = "/etc/haproxy/haproxy.cfg";
 const BUNDLED_BASE_CFG_PATH_SUFFIX = "/templates/haproxy-base.cfg";
+const BUNDLED_CERTBOT_CFG_PATH_SUFFIX = "/templates/haproxy-certbot.cfg";
 const BUNDLED_FRAG_SERVICE_PATH_SUFFIX = "/templates/haproxy-frag.service";
 const FRAGMENT_NAME = "app";
+const CERTBOT_FRAGMENT_NAME = "certbot";
 const REMOTE_FRAGMENT_DIR = "/etc/haproxy/conf.d";
 const REMOTE_FRAGMENT_PATH = `/etc/haproxy/conf.d/${FRAGMENT_NAME}.cfg`;
+const REMOTE_CERTBOT_FRAGMENT_PATH = `/etc/haproxy/conf.d/${CERTBOT_FRAGMENT_NAME}.cfg`;
 const REMOTE_SERVICE_UNIT_PATH = "/etc/systemd/system/haproxy-frag.service";
 const EARLY_CONF_DIR_MKDIR_CMD = "sudo mkdir -p '/etc/haproxy/conf.d/'";
 const ENABLE_HAPROXY_FRAG_CMD = "sudo systemctl enable haproxy-frag";
@@ -100,6 +105,13 @@ const BASE_BASE_OPTS = {
   privateKey: "TEST_PRIVATE_KEY",
 } as const;
 
+const BASE_CERTBOT_OPTS = {
+  host: "1.2.3.4",
+  user: "root",
+  privateKey: "TEST_PRIVATE_KEY",
+  certbotPort: "8081",
+} as const;
+
 const CONFIG_CONTENT = [
   "global",
   "  daemon",
@@ -108,6 +120,16 @@ const CONFIG_CONTENT = [
   "frontend web",
   "  bind *:80",
   "  default_backend app",
+].join("\n");
+
+const CERTBOT_TEMPLATE_CONTENT = [
+  "frontend ft_http",
+  "  bind *:80",
+  "  acl acme_challenge path_beg /.well-known/acme-challenge/",
+  "  use_backend bk_certbot if acme_challenge",
+  "",
+  "backend bk_certbot",
+  "  server certbot 127.0.0.1:${CERTBOT_PORT}",
 ].join("\n");
 
 function sshRemoteCmd(callIndex: number): string {
@@ -341,6 +363,48 @@ describe("deployHaproxyFragment", () => {
 
     expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(1);
     expect(sshRemoteCmd(0)).toContain(`'${REMOTE_FRAGMENT_PATH}'`);
+  });
+
+  it("can upload and validate a fragment without reloading haproxy-frag", async () => {
+    const result = await deployHaproxyFragmentWithoutReload(BASE_FRAGMENT_OPTS);
+
+    expect(result).toEqual({
+      configUploaded: true,
+      serviceReloaded: false,
+    });
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(2);
+    expect(sshRemoteCmd(0)).toContain(
+      `sudo mkdir -p '${REMOTE_FRAGMENT_DIR}' && sudo tee '${REMOTE_FRAGMENT_PATH}' > /dev/null`,
+    );
+    expect(sshRemoteCmd(1)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+  });
+});
+
+describe("deployHaproxyCertbotFragment", () => {
+  it("renders the bundled template, uploads it, validates it, and reloads haproxy-frag", async () => {
+    vi.mocked(fs.readFileSync).mockImplementation((filePath: fs.PathOrFileDescriptor) => {
+      const file = String(filePath);
+      if (file.includes(BUNDLED_CERTBOT_CFG_PATH_SUFFIX)) {
+        return CERTBOT_TEMPLATE_CONTENT as never;
+      }
+      return CONFIG_CONTENT as never;
+    });
+
+    const result = await deployHaproxyCertbotFragment(BASE_CERTBOT_OPTS);
+
+    expect(result).toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+    expect(fs.readFileSync).toHaveBeenCalledWith(
+      expect.stringContaining(BUNDLED_CERTBOT_CFG_PATH_SUFFIX),
+      "utf-8",
+    );
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
+    expect(sshRemoteCmd(0)).toContain(`'${REMOTE_CERTBOT_FRAGMENT_PATH}'`);
+    expect(sshRemoteCmd(0)).toContain("127.0.0.1:8081");
+    expect(sshRemoteCmd(1)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 });
 

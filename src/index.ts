@@ -98,6 +98,8 @@ function parseInputs(): ActionInputs {
   const serviceRestart = core.getInput("service_restart");
   const serviceRestartSec = core.getInput("service_restart_sec");
   const serviceYaml = core.getInput("service");
+  const certbot = core.getInput("certbot");
+  const certbotPort = core.getInput("certbot_port");
 
   const parsedService = parseServiceInput(serviceYaml);
   validateServiceConfig(parsedService);
@@ -124,8 +126,10 @@ function parseInputs(): ActionInputs {
     serverType: core.getInput("server_type"),
     projectTag: core.getInput("project_tag", { required: true }),
     ipv6Only: core.getInput("ipv6_only"),
+    certbot,
     containerImage: core.getInput("container_image"),
     containerPort: core.getInput("container_port"),
+    certbotPort,
     haproxyCfg: core.getInput("haproxy_cfg"),
     haproxyFragment: core.getInput("haproxy_fragment"),
     haproxyFragmentName: core.getInput("haproxy_fragment_name"),
@@ -152,6 +156,7 @@ function parseInputs(): ActionInputs {
     image: raw.image,
     serverType: raw.serverType,
     ipv6Only: raw.ipv6Only === "true",
+    certbot: raw.certbot === "true",
     publicKey: core.getInput("public_key", { required: true }),
     sshPrivateKey: core.getInput("ssh_private_key", { required: true }),
     sshUser: raw.sshUser,
@@ -162,6 +167,7 @@ function parseInputs(): ActionInputs {
     targetDir: raw.targetDir,
     containerImage: raw.containerImage || undefined,
     containerPort: raw.containerPort || undefined,
+    certbotPort: raw.certbotPort || undefined,
     haproxyCfg: raw.haproxyCfg || undefined,
     haproxyFragment: raw.haproxyFragment || undefined,
     haproxyFragmentName: raw.haproxyFragmentName || undefined,
@@ -190,6 +196,8 @@ function logInputs(inputs: ActionInputs): void {
   core.info(`  image:        ${inputs.image}`);
   core.info(`  server_type:  ${inputs.serverType}`);
   core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
+  core.info(`  certbot:      ${String(inputs.certbot)}`);
+  core.info(`  certbot_port: ${inputs.certbotPort ?? "(not set)"}`);
   core.info(`  ssh_user:     ${inputs.sshUser}`);
   core.info(`  service:      ${inputs.service ? "(provided)" : "(not set)"}`);
   core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);

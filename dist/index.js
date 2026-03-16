@@ -45409,6 +45409,8 @@ const haproxy_ERR_UPLOAD = "HAPROXY_UPLOAD";
 const ERR_VALIDATE = "HAPROXY_VALIDATE";
 const ERR_RELOAD = "HAPROXY_RELOAD";
 const ERR_SERVICE_INSTALL = "HAPROXY_SERVICE_INSTALL";
+const ERR_CERTBOT_READ = "HAPROXY_CERTBOT_READ";
+const ERR_CERTBOT_DEPLOY = "HAPROXY_CERTBOT_DEPLOY";
 const HAPROXY_START_OR_RELOAD_CMD = "sudo systemctl is-active --quiet haproxy-frag && sudo systemctl reload haproxy-frag || sudo systemctl start haproxy-frag";
 const HAPROXY_BASE_FALLBACK = `global
   daemon
@@ -45441,6 +45443,15 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 `;
+const HAPROXY_CERTBOT_FRAGMENT_NAME = "certbot";
+const HAPROXY_CERTBOT_FALLBACK = `frontend ft_http
+  bind *:80
+  acl acme_challenge path_beg /.well-known/acme-challenge/
+  use_backend bk_certbot if acme_challenge
+
+backend bk_certbot
+  server certbot 127.0.0.1:\${CERTBOT_PORT}
+`;
 function readBundledHaproxyBase() {
     const templatePath = external_node_path_.resolve(__dirname, "..", "..", "templates", "haproxy-base.cfg");
     if (!external_node_fs_namespaceObject.existsSync(templatePath)) {
@@ -45466,6 +45477,30 @@ function readBundledHaproxyFragService() {
         const msg = err instanceof Error ? err.message : String(err);
         throw new Error(`${ERR_SERVICE_INSTALL}: failed to read bundled HAProxy frag service: ${msg}`);
     }
+}
+function readBundledHaproxyCertbotFragment() {
+    const templatePath = external_node_path_.resolve(__dirname, "..", "..", "templates", "haproxy-certbot.cfg");
+    if (!external_node_fs_namespaceObject.existsSync(templatePath)) {
+        lib_core.info(`[${ERR_CERTBOT_READ}] Bundled HAProxy certbot fragment template not found at ${templatePath}; using inline fallback.`);
+        return HAPROXY_CERTBOT_FALLBACK;
+    }
+    try {
+        return external_node_fs_namespaceObject.readFileSync(templatePath, "utf-8");
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${ERR_CERTBOT_READ}: failed to read bundled HAProxy certbot fragment: ${msg}`);
+    }
+}
+function renderHaproxyCertbotFragment(certbotPort) {
+    lib_core.info(`[${ERR_CERTBOT_DEPLOY}] Rendering bundled HAProxy certbot fragment…`);
+    lib_core.debug(`[${ERR_CERTBOT_DEPLOY}] Substituting certbot fragment port with value: ${certbotPort}`);
+    if (!certbotPort) {
+        throw new Error(`${ERR_CERTBOT_DEPLOY}: certbotPort is required to render the HAProxy certbot fragment`);
+    }
+    const rendered = readBundledHaproxyCertbotFragment().replaceAll("${CERTBOT_PORT}", certbotPort);
+    lib_core.info(`[${ERR_CERTBOT_DEPLOY}] HAProxy certbot fragment render complete.`);
+    return rendered;
 }
 /* ------------------------------------------------------------------ */
 /*  Public API                                                        */
@@ -45675,6 +45710,108 @@ async function deployHaproxyFragment(opts) {
     });
     return result;
 }
+/**
+ * Deploy an HAProxy fragment to a remote host without reloading haproxy-frag.
+ *
+ * This is used when multiple fragment uploads should be validated first and a
+ * later deployment performs the single final reload.
+ */
+async function deployHaproxyFragmentWithoutReload(opts) {
+    const { host, user, privateKey, fragmentPath, fragmentName, ipv6Only = false, } = opts;
+    const result = {
+        configUploaded: false,
+        serviceReloaded: false,
+    };
+    const remotePath = `/etc/haproxy/conf.d/${fragmentName}.cfg`;
+    const validateBasePath = "/etc/haproxy/haproxy.cfg";
+    const validateFragmentsPath = "/etc/haproxy/conf.d/";
+    lib_core.info(`[${haproxy_ERR_UPLOAD}] Reading HAProxy fragment ${fragmentName} from ${fragmentPath} for deferred reload flow…`);
+    let fragmentContent;
+    try {
+        fragmentContent = external_node_fs_namespaceObject.readFileSync(fragmentPath, "utf-8");
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${haproxy_ERR_UPLOAD}: failed to read local fragment "${fragmentName}" from ${fragmentPath}: ${msg}`);
+    }
+    await withKeyFile(privateKey, async (keyPath) => {
+        lib_core.info(`[${haproxy_ERR_UPLOAD}] Uploading HAProxy fragment ${fragmentName} to ${remotePath} without reloading haproxy-frag yet…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo mkdir -p ${shellQuote("/etc/haproxy/conf.d")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${fragmentContent}\nHAPROXY_CFG_EOF`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${haproxy_ERR_UPLOAD}: failed to upload fragment "${fragmentName}": ${msg}`);
+        }
+        result.configUploaded = true;
+        lib_core.info(`[${haproxy_ERR_UPLOAD}] HAProxy fragment written to ${remotePath}.`);
+        lib_core.info(`[${ERR_VALIDATE}] Validating HAProxy configuration after uploading fragment ${fragmentName} without reloading yet…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo haproxy -c -f ${shellQuote(validateBasePath)} -f ${shellQuote(validateFragmentsPath)}`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_VALIDATE}: failed to validate HAProxy configuration after uploading fragment "${fragmentName}": ${msg}`);
+        }
+        lib_core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded; deferring haproxy-frag reload until later in the pipeline.`);
+    });
+    return result;
+}
+/**
+ * Deploy the bundled templated HAProxy certbot fragment to a remote host.
+ */
+async function deployHaproxyCertbotFragment(opts) {
+    const { host, user, privateKey, certbotPort, ipv6Only = false } = opts;
+    const result = {
+        configUploaded: false,
+        serviceReloaded: false,
+    };
+    const fragmentName = HAPROXY_CERTBOT_FRAGMENT_NAME;
+    const remotePath = `/etc/haproxy/conf.d/${fragmentName}.cfg`;
+    const validateBasePath = "/etc/haproxy/haproxy.cfg";
+    const validateFragmentsPath = "/etc/haproxy/conf.d/";
+    lib_core.info(`[${ERR_CERTBOT_DEPLOY}] Preparing bundled HAProxy certbot fragment deployment for port ${certbotPort}…`);
+    let fragmentContent;
+    try {
+        fragmentContent = renderHaproxyCertbotFragment(certbotPort);
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${ERR_CERTBOT_DEPLOY}: ${msg}`);
+    }
+    await withKeyFile(privateKey, async (keyPath) => {
+        lib_core.info(`[${ERR_CERTBOT_DEPLOY}] Uploading HAProxy certbot fragment ${fragmentName} to ${remotePath}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo mkdir -p ${shellQuote("/etc/haproxy/conf.d")} && sudo tee ${shellQuote(remotePath)} > /dev/null << 'HAPROXY_CFG_EOF'\n${fragmentContent}\nHAPROXY_CFG_EOF`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_CERTBOT_DEPLOY}: failed to upload certbot fragment "${fragmentName}": ${msg}`);
+        }
+        result.configUploaded = true;
+        lib_core.info(`[${ERR_CERTBOT_DEPLOY}] HAProxy certbot fragment written to ${remotePath}.`);
+        lib_core.info(`[${ERR_CERTBOT_DEPLOY}] Validating HAProxy configuration after uploading certbot fragment ${fragmentName}…`);
+        try {
+            await sshExec(keyPath, user, host, `sudo haproxy -c -f ${shellQuote(validateBasePath)} -f ${shellQuote(validateFragmentsPath)}`, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_CERTBOT_DEPLOY}: failed to validate HAProxy configuration after uploading certbot fragment "${fragmentName}": ${msg}`);
+        }
+        lib_core.info(`[${ERR_CERTBOT_DEPLOY}] HAProxy configuration validation succeeded.`);
+        lib_core.info(`[${ERR_CERTBOT_DEPLOY}] Reloading active haproxy-frag service or starting it if inactive…`);
+        try {
+            await sshExec(keyPath, user, host, HAPROXY_START_OR_RELOAD_CMD, ipv6Only);
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            throw new Error(`${ERR_CERTBOT_DEPLOY}: failed to reload haproxy-frag after deploying certbot fragment "${fragmentName}": ${msg}`);
+        }
+        result.serviceReloaded = true;
+        lib_core.info(`[${ERR_CERTBOT_DEPLOY}] haproxy-frag service reloaded or started successfully after certbot fragment deployment.`);
+    });
+    return result;
+}
 //# sourceMappingURL=haproxy.js.map
 ;// CONCATENATED MODULE: ./lib/deploy/firewall.js
 
@@ -45813,6 +45950,7 @@ async function configureFirewall(options) {
 
 
 
+const DEFAULT_CERTBOT_PORT = "8888";
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
 /* ------------------------------------------------------------------ */
@@ -45844,6 +45982,12 @@ function pipelineError(stage, cause) {
     const msg = cause instanceof Error ? cause.message : String(cause);
     return new Error(`DEPLOY_PIPELINE_${stage}: ${msg}`);
 }
+function mergeHaproxyResult(current, next) {
+    return {
+        configUploaded: current.configUploaded || next.configUploaded,
+        serviceReloaded: current.serviceReloaded || next.serviceReloaded,
+    };
+}
 /* ------------------------------------------------------------------ */
 /*  Stage predicates                                                  */
 /* ------------------------------------------------------------------ */
@@ -45860,7 +46004,7 @@ function activeStages(inputs) {
             case STAGES.systemd:
                 return Boolean(inputs.service?.name) && !inputs.containerImage;
             case STAGES.haproxy:
-                return Boolean(inputs.haproxyCfg || inputs.haproxyFragment);
+                return Boolean(inputs.haproxyCfg || inputs.haproxyFragment || inputs.certbot);
             case STAGES.firewall:
                 return Boolean(inputs.firewallEnabled);
         }
@@ -45951,6 +46095,9 @@ async function deployPipeline(inputs) {
                         host: server.ip,
                         user: inputs.sshUser,
                         privateKey: inputs.sshPrivateKey,
+                        packages: inputs.certbot
+                            ? [...DEFAULT_PACKAGES, "certbot"]
+                            : undefined,
                         strategy,
                         ipv6Only: effectiveIpv6Only,
                     });
@@ -46037,45 +46184,72 @@ async function deployPipeline(inputs) {
                     lib_core.info(`Service unit "${inputs.service.name}" installed and restarted.`);
                     break;
                 case STAGES.haproxy:
-                    if (!inputs.haproxyCfg && !inputs.haproxyFragment) {
-                        throw new Error("haproxy_cfg or haproxy_fragment is required for haproxy deployment");
+                    if (!inputs.haproxyCfg && !inputs.haproxyFragment && !inputs.certbot) {
+                        throw new Error("haproxy_cfg, haproxy_fragment, or certbot is required for haproxy deployment");
                     }
-                    await ensureHaproxyFragService({
-                        host: server.ip,
-                        user: inputs.sshUser,
-                        privateKey: inputs.sshPrivateKey,
-                        ipv6Only: effectiveIpv6Only,
-                    });
-                    if (inputs.haproxyCfg) {
-                        haproxyResult = await deployHaproxy({
+                    {
+                        const shouldDeployBaseConfig = !inputs.haproxyCfg && (Boolean(inputs.haproxyFragment) || inputs.certbot);
+                        const certbotPort = inputs.certbotPort ?? DEFAULT_CERTBOT_PORT;
+                        await ensureHaproxyFragService({
                             host: server.ip,
                             user: inputs.sshUser,
                             privateKey: inputs.sshPrivateKey,
-                            cfgPath: inputs.haproxyCfg,
                             ipv6Only: effectiveIpv6Only,
                         });
-                    }
-                    if (inputs.haproxyFragment) {
-                        if (!inputs.haproxyCfg) {
+                        if (inputs.haproxyCfg) {
+                            haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxy({
+                                host: server.ip,
+                                user: inputs.sshUser,
+                                privateKey: inputs.sshPrivateKey,
+                                cfgPath: inputs.haproxyCfg,
+                                ipv6Only: effectiveIpv6Only,
+                            }));
+                        }
+                        if (shouldDeployBaseConfig) {
                             lib_core.info("HAProxy fragment-only mode detected; deploying bundled base config before fragment deployment.");
-                            haproxyResult = await deployHaproxyBase({
+                            haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyBase({
                                 host: server.ip,
                                 user: inputs.sshUser,
                                 privateKey: inputs.sshPrivateKey,
                                 ipv6Only: effectiveIpv6Only,
-                            });
+                            }));
                         }
-                        if (!inputs.haproxyFragmentName) {
-                            throw new Error("haproxy_fragment_name is required for haproxy fragment deployment");
+                        if (inputs.haproxyFragment) {
+                            if (!inputs.haproxyFragmentName) {
+                                throw new Error("haproxy_fragment_name is required for haproxy fragment deployment");
+                            }
+                            if (inputs.certbot) {
+                                lib_core.info(`HAProxy certbot flow enabled; uploading custom fragment "${inputs.haproxyFragmentName}" without reloading so certbot can trigger the final fragment reload once.`);
+                                haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyFragmentWithoutReload({
+                                    host: server.ip,
+                                    user: inputs.sshUser,
+                                    privateKey: inputs.sshPrivateKey,
+                                    fragmentPath: inputs.haproxyFragment,
+                                    fragmentName: inputs.haproxyFragmentName,
+                                    ipv6Only: effectiveIpv6Only,
+                                }));
+                            }
+                            else {
+                                haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyFragment({
+                                    host: server.ip,
+                                    user: inputs.sshUser,
+                                    privateKey: inputs.sshPrivateKey,
+                                    fragmentPath: inputs.haproxyFragment,
+                                    fragmentName: inputs.haproxyFragmentName,
+                                    ipv6Only: effectiveIpv6Only,
+                                }));
+                            }
                         }
-                        haproxyResult = await deployHaproxyFragment({
-                            host: server.ip,
-                            user: inputs.sshUser,
-                            privateKey: inputs.sshPrivateKey,
-                            fragmentPath: inputs.haproxyFragment,
-                            fragmentName: inputs.haproxyFragmentName,
-                            ipv6Only: effectiveIpv6Only,
-                        });
+                        if (inputs.certbot) {
+                            lib_core.info(`HAProxy certbot flow enabled; deploying bundled certbot fragment with final haproxy-frag reload using certbot_port=${certbotPort}.`);
+                            haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyCertbotFragment({
+                                host: server.ip,
+                                user: inputs.sshUser,
+                                privateKey: inputs.sshPrivateKey,
+                                certbotPort,
+                                ipv6Only: effectiveIpv6Only,
+                            }));
+                        }
                     }
                     lib_core.info("HAProxy configuration deployed and service reloaded.");
                     break;
@@ -46231,6 +46405,13 @@ const rules = [
         hint: 'Must be exactly "true" or "false".',
     },
     {
+        field: "certbot",
+        label: "certbot",
+        pattern: /^(true|false)$/,
+        hint: 'Must be exactly "true" or "false".',
+        optional: true,
+    },
+    {
         field: "containerImage",
         label: "container_image",
         pattern: /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/,
@@ -46249,6 +46430,13 @@ const rules = [
         label: "container_port",
         pattern: /^\d{1,5}(:\d{1,5})?$/,
         hint: 'Must be a port like "8080" or a port mapping like "8080:80".',
+        optional: true,
+    },
+    {
+        field: "certbotPort",
+        label: "certbot_port",
+        pattern: /^\d{1,5}$/,
+        hint: 'Must be a port like "80".',
         optional: true,
     },
     {
@@ -46303,6 +46491,12 @@ function validateInputs(inputs) {
         }
         if (!rule.pattern.test(value)) {
             throw new Error(`INPUT_VALIDATION_ Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`);
+        }
+    }
+    if (inputs.certbot === "true" && inputs.certbotPort) {
+        const certbotPort = Number(inputs.certbotPort);
+        if (certbotPort < 1 || certbotPort > 65535) {
+            throw new Error(`INPUT_VALIDATION_ Invalid value for "certbot_port": ${JSON.stringify(inputs.certbotPort)}. Must be an integer between 1 and 65535 when "certbot" is true.`);
         }
     }
     if (inputs.serviceName && !inputs.containerImage && !inputs.execStart) {
@@ -46394,6 +46588,8 @@ function parseInputs() {
     const serviceRestart = lib_core.getInput("service_restart");
     const serviceRestartSec = lib_core.getInput("service_restart_sec");
     const serviceYaml = lib_core.getInput("service");
+    const certbot = lib_core.getInput("certbot");
+    const certbotPort = lib_core.getInput("certbot_port");
     const parsedService = parseServiceInput(serviceYaml);
     validateServiceConfig(parsedService);
     const validatedServiceName = parsedService?.name ?? flatServiceName;
@@ -46414,8 +46610,10 @@ function parseInputs() {
         serverType: lib_core.getInput("server_type"),
         projectTag: lib_core.getInput("project_tag", { required: true }),
         ipv6Only: lib_core.getInput("ipv6_only"),
+        certbot,
         containerImage: lib_core.getInput("container_image"),
         containerPort: lib_core.getInput("container_port"),
+        certbotPort,
         haproxyCfg: lib_core.getInput("haproxy_cfg"),
         haproxyFragment: lib_core.getInput("haproxy_fragment"),
         haproxyFragmentName: lib_core.getInput("haproxy_fragment_name"),
@@ -46439,6 +46637,7 @@ function parseInputs() {
         image: raw.image,
         serverType: raw.serverType,
         ipv6Only: raw.ipv6Only === "true",
+        certbot: raw.certbot === "true",
         publicKey: lib_core.getInput("public_key", { required: true }),
         sshPrivateKey: lib_core.getInput("ssh_private_key", { required: true }),
         sshUser: raw.sshUser,
@@ -46449,6 +46648,7 @@ function parseInputs() {
         targetDir: raw.targetDir,
         containerImage: raw.containerImage || undefined,
         containerPort: raw.containerPort || undefined,
+        certbotPort: raw.certbotPort || undefined,
         haproxyCfg: raw.haproxyCfg || undefined,
         haproxyFragment: raw.haproxyFragment || undefined,
         haproxyFragmentName: raw.haproxyFragmentName || undefined,
@@ -46475,6 +46675,8 @@ function logInputs(inputs) {
     lib_core.info(`  image:        ${inputs.image}`);
     lib_core.info(`  server_type:  ${inputs.serverType}`);
     lib_core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
+    lib_core.info(`  certbot:      ${String(inputs.certbot)}`);
+    lib_core.info(`  certbot_port: ${inputs.certbotPort ?? "(not set)"}`);
     lib_core.info(`  ssh_user:     ${inputs.sshUser}`);
     lib_core.info(`  service:      ${inputs.service ? "(provided)" : "(not set)"}`);
     lib_core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);

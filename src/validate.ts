@@ -53,9 +53,11 @@ export interface ValidatableInputs {
   serverType: string;
   projectTag: string;
   ipv6Only: string;
+  certbot: string;
   containerImage: string;
   execStart?: string;
   containerPort: string;
+  certbotPort: string;
   haproxyCfg: string;
   haproxyFragment: string;
   haproxyFragmentName: string;
@@ -156,6 +158,13 @@ const rules: ValidationRule[] = [
     hint: 'Must be exactly "true" or "false".',
   },
   {
+    field: "certbot",
+    label: "certbot",
+    pattern: /^(true|false)$/,
+    hint: 'Must be exactly "true" or "false".',
+    optional: true,
+  },
+  {
     field: "containerImage",
     label: "container_image",
     pattern: /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/,
@@ -174,6 +183,13 @@ const rules: ValidationRule[] = [
     label: "container_port",
     pattern: /^\d{1,5}(:\d{1,5})?$/,
     hint: 'Must be a port like "8080" or a port mapping like "8080:80".',
+    optional: true,
+  },
+  {
+    field: "certbotPort",
+    label: "certbot_port",
+    pattern: /^\d{1,5}$/,
+    hint: 'Must be a port like "80".',
     optional: true,
   },
   {
@@ -233,6 +249,16 @@ export function validateInputs(inputs: ValidatableInputs): void {
     if (!rule.pattern.test(value)) {
       throw new Error(
         `INPUT_VALIDATION_ Invalid value for "${rule.label}": ${JSON.stringify(value)}. ${rule.hint}`,
+      );
+    }
+  }
+
+  if (inputs.certbot === "true" && inputs.certbotPort) {
+    const certbotPort = Number(inputs.certbotPort);
+
+    if (certbotPort < 1 || certbotPort > 65535) {
+      throw new Error(
+        `INPUT_VALIDATION_ Invalid value for "certbot_port": ${JSON.stringify(inputs.certbotPort)}. Must be an integer between 1 and 65535 when "certbot" is true.`,
       );
     }
   }

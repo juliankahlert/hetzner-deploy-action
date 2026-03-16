@@ -81,6 +81,8 @@ beforeEach(() => {
 describe("src/index entrypoint", () => {
   it("passes fully configured inputs through to the pipeline", async () => {
     mockInputs({
+      certbot: "true",
+      certbot_port: "8081",
       container_image: "ghcr.io/acme/app:1.2.3",
       container_port: "8080:80",
       exec_start: "/usr/bin/node /srv/app/server.js --port 8080",
@@ -106,6 +108,8 @@ describe("src/index entrypoint", () => {
     expect(mocks.validateServiceConfig).toHaveBeenCalledWith(undefined);
     expect(mocks.validateServiceConfig).toHaveBeenCalledTimes(1);
     expect(mocks.validateInputs).toHaveBeenCalledWith({
+      certbot: "true",
+      certbotPort: "8081",
       containerPort: "8080:80",
       containerImage: "ghcr.io/acme/app:1.2.3",
       execStart: "/usr/bin/node /srv/app/server.js --port 8080",
@@ -129,6 +133,8 @@ describe("src/index entrypoint", () => {
     });
     expect(mocks.validateInputs).toHaveBeenCalledTimes(1);
     expect(mocks.deployPipeline).toHaveBeenCalledWith({
+      certbot: true,
+      certbotPort: "8081",
       containerImage: "ghcr.io/acme/app:1.2.3",
       containerPort: "8080:80",
       execStart: "/usr/bin/node /srv/app/server.js --port 8080",
@@ -166,6 +172,8 @@ describe("src/index entrypoint", () => {
 
     const logs = infoMessages();
     expect(logs).toContain("  ipv6_only:    true");
+    expect(logs).toContain("  certbot:      true");
+    expect(logs).toContain("  certbot_port: 8081");
     expect(logs).toContain("  service:      (provided)");
     expect(logs).toContain("  service_name: (provided)");
     expect(logs).toContain("  exec_start:   (provided)");
@@ -178,9 +186,35 @@ describe("src/index entrypoint", () => {
     await importEntrypoint();
 
     expect(mocks.validateServiceConfig).toHaveBeenCalledWith(undefined);
+    expect(mocks.validateInputs).toHaveBeenCalledWith({
+      certbot: "",
+      certbotPort: "",
+      containerImage: "",
+      containerPort: "",
+      firewallEnabled: "",
+      firewallExtraPorts: "",
+      haproxyCfg: "",
+      haproxyFragment: "",
+      haproxyFragmentName: "",
+      image: "",
+      ipv6Only: "",
+      projectTag: "demo-project",
+      serverName: "demo-server",
+      serverType: "",
+      serviceName: "",
+      serviceRestart: "on-failure",
+      serviceRestartSec: "5",
+      serviceType: "simple",
+      sourceDir: "",
+      sshUser: "",
+      targetDir: "",
+    });
     expect(mocks.deployPipeline).toHaveBeenCalledWith({
+      certbot: false,
+      certbotPort: undefined,
       containerImage: undefined,
       containerPort: undefined,
+      execStart: undefined,
       firewallEnabled: false,
       firewallExtraPorts: undefined,
       haproxyCfg: undefined,
@@ -202,6 +236,8 @@ describe("src/index entrypoint", () => {
     });
 
     const logs = infoMessages();
+    expect(logs).toContain("  certbot:      false");
+    expect(logs).toContain("  certbot_port: (not set)");
     expect(logs).toContain("  service:      (not set)");
     expect(logs).toContain("  service_name: (not set)");
     expect(logs).toContain("  container_image: (not set)");

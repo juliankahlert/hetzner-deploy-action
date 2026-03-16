@@ -27,8 +27,10 @@ const validInputs: ValidatableInputs = {
   serverType: "cx23",
   projectTag: "myproject",
   ipv6Only: "false",
+  certbot: "false",
   containerImage: "",
   containerPort: "",
+  certbotPort: "",
   haproxyCfg: "",
   haproxyFragment: "",
   haproxyFragmentName: "",
@@ -280,6 +282,98 @@ describe("validateInputs — ipv6Only", () => {
     expect(() =>
       validateInputs(withOverride({ ipv6Only: "" })),
     ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// certbot
+// ---------------------------------------------------------------------------
+describe("validateInputs — certbot", () => {
+  it("accepts 'true'", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbot: "true" })),
+    ).not.toThrow();
+  });
+
+  it("accepts 'false'", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbot: "false" })),
+    ).not.toThrow();
+  });
+
+  it("rejects 'yes'", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbot: "yes" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects '1'", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbot: "1" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects 'True' (case-sensitive)", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbot: "True" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// certbotPort (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — certbotPort (optional)", () => {
+  it("allows an empty string", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbotPort: "" })),
+    ).not.toThrow();
+  });
+
+  it("accepts 1 to 5 digits when certbot is false", () => {
+    for (const certbotPort of ["1", "80", "8080", "65535"]) {
+      expect(() =>
+        validateInputs(withOverride({ certbot: "false", certbotPort })),
+      ).not.toThrow();
+    }
+  });
+
+  it("rejects non-numeric certbot_port values", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbotPort: "abc" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects certbot_port values longer than 5 digits", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbotPort: "100000" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects signed certbot_port values", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbotPort: "-1" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("accepts certbot=true with ports in the 1..65535 range", () => {
+    for (const certbotPort of ["1", "80", "65535"]) {
+      expect(() =>
+        validateInputs(withOverride({ certbot: "true", certbotPort })),
+      ).not.toThrow();
+    }
+  });
+
+  it("rejects certbot=true with certbot_port set to 0", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbot: "true", certbotPort: "0" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
+  });
+
+  it("rejects certbot=true with certbot_port above 65535", () => {
+    expect(() =>
+      validateInputs(withOverride({ certbot: "true", certbotPort: "65536" })),
+    ).toThrow(/^INPUT_VALIDATION_/);
   });
 });
 

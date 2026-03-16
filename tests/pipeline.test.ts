@@ -39,6 +39,7 @@ vi.mock("../src/deploy/remoteSetup.js", () => ({
 }));
 
 vi.mock("../src/deploy/packageInstall.js", () => ({
+  DEFAULT_PACKAGES: ["podman", "haproxy"],
   installPackages: vi.fn(),
 }));
 
@@ -53,7 +54,9 @@ vi.mock("../src/deploy/podman.js", () => ({
 vi.mock("../src/deploy/haproxy.js", () => ({
   deployHaproxy: vi.fn(),
   deployHaproxyBase: vi.fn(),
+  deployHaproxyCertbotFragment: vi.fn(),
   deployHaproxyFragment: vi.fn(),
+  deployHaproxyFragmentWithoutReload: vi.fn(),
   ensureHaproxyFragService: vi.fn(),
 }));
 
@@ -87,7 +90,9 @@ import { deployPodman } from "../src/deploy/podman.js";
 import {
   deployHaproxy,
   deployHaproxyBase,
+  deployHaproxyCertbotFragment,
   deployHaproxyFragment,
+  deployHaproxyFragmentWithoutReload,
   ensureHaproxyFragService,
 } from "../src/deploy/haproxy.js";
 import { configureFirewall } from "../src/deploy/firewall.js";
@@ -133,6 +138,7 @@ const BASE_INPUTS: ActionInputs = {
   image: "ubuntu-24.04",
   serverType: "cx22",
   ipv6Only: false,
+  certbot: false,
   publicKey: "ssh-ed25519 AAAA",
   sshPrivateKey: "PRIVATE_KEY",
   sshUser: "deploy",
@@ -222,9 +228,17 @@ beforeEach(() => {
     configUploaded: true,
     serviceReloaded: false,
   });
+  vi.mocked(deployHaproxyCertbotFragment).mockResolvedValue({
+    configUploaded: true,
+    serviceReloaded: true,
+  });
   vi.mocked(deployHaproxyFragment).mockResolvedValue({
     configUploaded: true,
     serviceReloaded: true,
+  });
+  vi.mocked(deployHaproxyFragmentWithoutReload).mockResolvedValue({
+    configUploaded: true,
+    serviceReloaded: false,
   });
   vi.mocked(ensureHaproxyFragService).mockResolvedValue(undefined);
   vi.mocked(configureFirewall).mockResolvedValue({
@@ -652,6 +666,74 @@ describe("deployPipeline — stage ordering", () => {
     ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: base upload failed$/);
 
     expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyFragment).not.toHaveBeenCalled();
+  });
+
+  it("runs certbot-only flow: ensure service → deploy base → deploy certbot fragment", async () => {
+    await deployPipeline(
+      withInputs({
+        certbot: true,
+        certbotPort: "8888",
+      }),
+    );
+
+    const ensureCall = vi.mocked(ensureHaproxyFragService).mock.invocationCallOrder[0];
+    const deployBaseCall = vi.mocked(deployHaproxyBase).mock.invocationCallOrder[0];
+    const deployCertbotCall =
+      vi.mocked(deployHaproxyCertbotFragment).mock.invocationCallOrder[0];
+
+    expect(ensureHaproxyFragService).toHaveBeenCalledOnce();
+    expect(deployHaproxyBase).toHaveBeenCalledOnce();
+    expect(deployHaproxyCertbotFragment).toHaveBeenCalledOnce();
+    expect(deployHaproxyCertbotFragment).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      certbotPort: "8888",
+      ipv6Only: false,
+    });
+    expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyFragment).not.toHaveBeenCalled();
+    expect(deployHaproxyFragmentWithoutReload).not.toHaveBeenCalled();
+    expect(ensureCall).toBeLessThan(deployBaseCall);
+    expect(deployBaseCall).toBeLessThan(deployCertbotCall);
+  });
+
+  it("runs certbot fragment flow with one final reload after all fragments", async () => {
+    await deployPipeline(
+      withInputs({
+        certbot: true,
+        certbotPort: "8081",
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    const ensureCall = vi.mocked(ensureHaproxyFragService).mock.invocationCallOrder[0];
+    const deployBaseCall = vi.mocked(deployHaproxyBase).mock.invocationCallOrder[0];
+    const deployDeferredFragmentCall =
+      vi.mocked(deployHaproxyFragmentWithoutReload).mock.invocationCallOrder[0];
+    const deployCertbotCall =
+      vi.mocked(deployHaproxyCertbotFragment).mock.invocationCallOrder[0];
+
+    expect(ensureCall).toBeLessThan(deployBaseCall);
+    expect(deployBaseCall).toBeLessThan(deployDeferredFragmentCall);
+    expect(deployDeferredFragmentCall).toBeLessThan(deployCertbotCall);
+    expect(deployHaproxyFragmentWithoutReload).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      fragmentPath: "/tmp/app.fragment.cfg",
+      fragmentName: "app",
+      ipv6Only: false,
+    });
+    expect(deployHaproxyCertbotFragment).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      certbotPort: "8081",
+      ipv6Only: false,
+    });
     expect(deployHaproxyFragment).not.toHaveBeenCalled();
   });
 });
