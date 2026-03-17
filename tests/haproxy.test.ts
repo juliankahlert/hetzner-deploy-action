@@ -433,10 +433,14 @@ describe("deployHaproxyFragment", () => {
       /HAPROXY_VALIDATE: failed to validate HAProxy configuration after uploading fragment "app": config invalid/,
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(6);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(7);
     expect(sshRemoteCmd(4)).toBe(RESTORE_CONF_D_CMD);
     expect(sshRemoteCmd(5)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(6)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
     expect(core.info).toHaveBeenCalledWith("[HAPROXY_HASH] Phase: post-restore");
+    expect(core.info).toHaveBeenCalledWith(
+      `[HAPROXY_VALIDATE] Running HAProxy diagnostic validation on restored configuration for fragment ${FRAGMENT_NAME}…`,
+    );
   });
 
   it("warns and continues when cleanup backup fails after successful fragment validation", async () => {
