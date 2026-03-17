@@ -736,6 +736,51 @@ describe("deployPipeline — stage ordering", () => {
     });
     expect(deployHaproxyFragment).not.toHaveBeenCalled();
   });
+
+  it("short-circuits certbot helper when deferred fragment helper fails", async () => {
+    vi.mocked(deployHaproxyFragmentWithoutReload).mockRejectedValueOnce(
+      new Error("deferred fragment validation failed"),
+    );
+
+    await expect(
+      deployPipeline(
+        withInputs({
+          certbot: true,
+          certbotPort: "8081",
+          haproxyFragment: "/tmp/app.fragment.cfg",
+          haproxyFragmentName: "app",
+        }),
+      ),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: deferred fragment validation failed$/);
+
+    expect(deployHaproxyCertbotFragment).not.toHaveBeenCalled();
+  });
+
+  it("logs haproxy reload success for certbot fragment flow", async () => {
+    vi.mocked(deployHaproxyBase).mockResolvedValueOnce({
+      configUploaded: true,
+      serviceReloaded: false,
+    });
+    vi.mocked(deployHaproxyFragmentWithoutReload).mockResolvedValueOnce({
+      configUploaded: true,
+      serviceReloaded: false,
+    });
+    vi.mocked(deployHaproxyCertbotFragment).mockResolvedValueOnce({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    await deployPipeline(
+      withInputs({
+        certbot: true,
+        certbotPort: "8081",
+        haproxyFragment: "/tmp/app.fragment.cfg",
+        haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(core.info).toHaveBeenCalledWith("  haproxy reloaded:  yes");
+  });
 });
 
 // ===========================================================================
@@ -1037,6 +1082,44 @@ describe("deployPipeline — error propagation", () => {
         }),
       ),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: fragment reload failed$/);
+  });
+
+  it("wraps deferred fragment helper validation failure with DEPLOY_PIPELINE_haproxy prefix", async () => {
+    vi.mocked(deployHaproxyFragmentWithoutReload).mockRejectedValueOnce(
+      new Error(
+        'HAPROXY_VALIDATE: failed to deploy fragment "app" without reload: invalid fragment; rolled back; restored configuration is valid',
+      ),
+    );
+
+    await expect(
+      deployPipeline(
+        withInputs({
+          certbot: true,
+          certbotPort: "8081",
+          haproxyFragment: "/tmp/app.fragment.cfg",
+          haproxyFragmentName: "app",
+        }),
+      ),
+    ).rejects.toThrow(
+      /^DEPLOY_PIPELINE_haproxy: HAPROXY_VALIDATE: failed to deploy fragment "app" without reload: invalid fragment; rolled back; restored configuration is valid$/,
+    );
+  });
+
+  it("wraps deployHaproxy rollback validation failures with DEPLOY_PIPELINE_haproxy and preserves rollback context", async () => {
+    vi.mocked(deployHaproxy).mockRejectedValueOnce(
+      new Error(
+        "HAPROXY_VALIDATE: failed to deploy config: invalid cfg; rolled back; restored-state health unavailable because rollback restore failed: permission denied",
+      ),
+    );
+
+    try {
+      await deployPipeline(withInputs({ haproxyCfg: "/etc/haproxy/haproxy.cfg" }));
+      throw new Error("expected deployPipeline to reject");
+    } catch (err: unknown) {
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toMatch(/^DEPLOY_PIPELINE_haproxy: /);
+      expect((err as Error).message).toContain("rolled back");
+    }
   });
 
   it("wraps firewall failure with DEPLOY_PIPELINE_firewall prefix", async () => {

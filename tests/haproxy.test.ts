@@ -443,6 +443,61 @@ describe("deployHaproxyFragment", () => {
     );
   });
 
+  it("restores conf.d, logs post-restore hashes, runs diagnostic validation, and skips reload when deferred fragment validation fails", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("prehash /etc/haproxy/conf.d/app.cfg")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("config invalid"))
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("restorehash /etc/haproxy/conf.d/app.cfg")
+      .mockResolvedValueOnce("");
+
+    await expect(
+      deployHaproxyFragmentWithoutReload(BASE_FRAGMENT_OPTS),
+    ).rejects.toThrow(/HAPROXY_VALIDATE: .*rolled back; restored configuration is valid/);
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(7);
+    expect(sshRemoteCmd(0)).toBe(BACKUP_CONF_D_CMD);
+    expect(sshRemoteCmd(1)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(2)).toContain(`'${REMOTE_FRAGMENT_PATH}'`);
+    expect(sshRemoteCmd(3)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(sshRemoteCmd(4)).toBe(RESTORE_CONF_D_CMD);
+    expect(sshRemoteCmd(5)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(6)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("[HAPROXY_HASH] Phase: pre-upload"),
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("[HAPROXY_HASH] Phase: post-restore"),
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      `[HAPROXY_VALIDATE] Running HAProxy diagnostic validation on restored configuration for fragment ${FRAGMENT_NAME} in deferred reload flow…`,
+    );
+    expect(
+      vi.mocked(ssh.sshExec).mock.calls.some(
+        (call) => (call[3] as string) === START_OR_RELOAD_HAPROXY_FRAG_CMD,
+      ),
+    ).toBe(false);
+  });
+
+  it("throws an enriched deferred fragment validation error after rollback health checks", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("prehash /etc/haproxy/conf.d/app.cfg")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("config invalid"))
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("restorehash /etc/haproxy/conf.d/app.cfg")
+      .mockResolvedValueOnce("");
+
+    await expect(
+      deployHaproxyFragmentWithoutReload(BASE_FRAGMENT_OPTS),
+    ).rejects.toThrow(
+      /HAPROXY_VALIDATE: failed to deploy fragment "app" without reload: HAPROXY_VALIDATE: failed to validate HAProxy configuration after uploading fragment "app": config invalid; rolled back; restored configuration is valid/,
+    );
+  });
+
   it("warns and continues when cleanup backup fails after successful fragment validation", async () => {
     vi.mocked(ssh.sshExec)
       .mockResolvedValueOnce("")
@@ -551,6 +606,49 @@ describe("deployHaproxyCertbotFragment", () => {
     expect(sshRemoteCmd(4)).toBe(HASH_CONF_D_CMD);
     expect(sshRemoteCmd(5)).toBe(CLEANUP_CONF_D_BACKUP_CMD);
     expect(sshRemoteCmd(6)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+  });
+
+  it("restores conf.d, logs post-restore hashes, runs diagnostic validation, and throws enriched errors when certbot fragment validation fails", async () => {
+    vi.mocked(fs.readFileSync).mockImplementation((filePath: fs.PathOrFileDescriptor) => {
+      const file = String(filePath);
+      if (file.includes(BUNDLED_CERTBOT_CFG_PATH_SUFFIX)) {
+        return CERTBOT_TEMPLATE_CONTENT as never;
+      }
+      return CONFIG_CONTENT as never;
+    });
+
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("prehash /etc/haproxy/conf.d/certbot.cfg")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("config invalid"))
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("restorehash /etc/haproxy/conf.d/certbot.cfg")
+      .mockResolvedValueOnce("");
+
+    await expect(deployHaproxyCertbotFragment(BASE_CERTBOT_OPTS)).rejects.toThrow(
+      /HAPROXY_CERTBOT_DEPLOY: failed to deploy certbot fragment "certbot" for port 8081: HAPROXY_CERTBOT_DEPLOY: failed to validate HAProxy configuration after uploading certbot fragment "certbot": config invalid; rolled back; restored configuration is valid/,
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(7);
+    expect(sshRemoteCmd(0)).toBe(BACKUP_CONF_D_CMD);
+    expect(sshRemoteCmd(1)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(2)).toContain(`'${REMOTE_CERTBOT_FRAGMENT_PATH}'`);
+    expect(sshRemoteCmd(3)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(sshRemoteCmd(4)).toBe(RESTORE_CONF_D_CMD);
+    expect(sshRemoteCmd(5)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(6)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("[HAPROXY_HASH] Phase: post-restore"),
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      `[HAPROXY_CERTBOT_DEPLOY] Running HAProxy diagnostic validation on restored configuration for certbot fragment ${CERTBOT_FRAGMENT_NAME}…`,
+    );
+    expect(
+      vi.mocked(ssh.sshExec).mock.calls.some(
+        (call) => (call[3] as string) === START_OR_RELOAD_HAPROXY_FRAG_CMD,
+      ),
+    ).toBe(false);
   });
 });
 
