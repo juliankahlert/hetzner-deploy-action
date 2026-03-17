@@ -61,6 +61,13 @@ const EARLY_CONF_DIR_MKDIR_CMD = "sudo mkdir -p '/etc/haproxy/conf.d/'";
 const ENABLE_HAPROXY_FRAG_CMD = "sudo systemctl enable haproxy-frag";
 const START_OR_RELOAD_HAPROXY_FRAG_CMD =
   "sudo systemctl is-active --quiet haproxy-frag && sudo systemctl reload haproxy-frag || sudo systemctl start haproxy-frag";
+const BACKUP_CONF_D_CMD =
+  "sudo rm -rf /etc/haproxy/conf.d.bak && sudo cp -a /etc/haproxy/conf.d /etc/haproxy/conf.d.bak";
+const RESTORE_CONF_D_CMD =
+  "sudo rm -rf /etc/haproxy/conf.d && sudo mv /etc/haproxy/conf.d.bak /etc/haproxy/conf.d";
+const CLEANUP_CONF_D_BACKUP_CMD = "sudo rm -rf /etc/haproxy/conf.d.bak";
+const HASH_CONF_D_CMD =
+  "sudo find /etc/haproxy/conf.d -name '*.cfg' -exec sha256sum {} +";
 const REMOTE_FRAGMENT_VALIDATE_CMD =
   `sudo haproxy -c -f '${REMOTE_CFG_PATH}' -f '${REMOTE_FRAGMENT_DIR}/'`;
 const STOP_DISABLE_HAPROXY_CMD =
@@ -317,6 +324,15 @@ describe("deployHaproxyBase", () => {
 
 describe("deployHaproxyFragment", () => {
   it("reads the fragment, uploads it, validates the full config, and reloads haproxy", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("prehash  /etc/haproxy/conf.d/app.cfg")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("posthash  /etc/haproxy/conf.d/app.cfg")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("");
+
     const result = await deployHaproxyFragment(BASE_FRAGMENT_OPTS);
 
     expect(result).toEqual({
@@ -330,18 +346,28 @@ describe("deployHaproxyFragment", () => {
       expect.any(Function),
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
-    expect(sshRemoteCmd(0)).toContain(
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(7);
+    expect(sshRemoteCmd(0)).toBe(BACKUP_CONF_D_CMD);
+    expect(sshRemoteCmd(1)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(2)).toContain(
       `sudo mkdir -p '${REMOTE_FRAGMENT_DIR}' && sudo tee '${REMOTE_FRAGMENT_PATH}' > /dev/null`,
     );
-    expect(sshRemoteCmd(0)).toContain("HAPROXY_CFG_EOF");
-    expect(sshRemoteCmd(0)).toContain(CONFIG_CONTENT);
-    expect(sshRemoteCmd(1)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
-    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+    expect(sshRemoteCmd(2)).toContain("HAPROXY_CFG_EOF");
+    expect(sshRemoteCmd(2)).toContain(CONFIG_CONTENT);
+    expect(sshRemoteCmd(3)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(sshRemoteCmd(4)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(5)).toBe(CLEANUP_CONF_D_BACKUP_CMD);
+    expect(sshRemoteCmd(6)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+    expect(core.info).toHaveBeenCalledWith("[HAPROXY_HASH] Phase: pre-upload");
+    expect(core.info).toHaveBeenCalledWith("[HAPROXY_HASH] Phase: post-upload");
   });
 
   it("uses start-or-reload so fragment deploy works whether haproxy-frag is active or inactive", async () => {
     vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
       .mockResolvedValueOnce("")
       .mockResolvedValueOnce("")
       .mockResolvedValueOnce("reloaded or started");
@@ -351,32 +377,135 @@ describe("deployHaproxyFragment", () => {
       serviceReloaded: true,
     });
 
-    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+    expect(sshRemoteCmd(6)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 
   it("wraps fragment upload failures with clear fragment context", async () => {
-    vi.mocked(ssh.sshExec).mockRejectedValueOnce(new Error("tee failed"));
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("tee failed"));
 
     await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).rejects.toThrow(
       /HAPROXY_UPLOAD: failed to upload fragment "app": tee failed/,
     );
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(1);
-    expect(sshRemoteCmd(0)).toContain(`'${REMOTE_FRAGMENT_PATH}'`);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
+    expect(sshRemoteCmd(2)).toContain(`'${REMOTE_FRAGMENT_PATH}'`);
   });
 
   it("can upload and validate a fragment without reloading haproxy-frag", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("");
+
     const result = await deployHaproxyFragmentWithoutReload(BASE_FRAGMENT_OPTS);
 
     expect(result).toEqual({
       configUploaded: true,
       serviceReloaded: false,
     });
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(2);
-    expect(sshRemoteCmd(0)).toContain(
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(6);
+    expect(sshRemoteCmd(0)).toBe(BACKUP_CONF_D_CMD);
+    expect(sshRemoteCmd(1)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(2)).toContain(
       `sudo mkdir -p '${REMOTE_FRAGMENT_DIR}' && sudo tee '${REMOTE_FRAGMENT_PATH}' > /dev/null`,
     );
-    expect(sshRemoteCmd(1)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(sshRemoteCmd(3)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(sshRemoteCmd(4)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(5)).toBe(CLEANUP_CONF_D_BACKUP_CMD);
+  });
+
+  it("restores conf.d and logs post-restore hashes when fragment validation fails", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("prehash /etc/haproxy/conf.d/app.cfg")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("config invalid"))
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("restorehash /etc/haproxy/conf.d/app.cfg");
+
+    await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).rejects.toThrow(
+      /HAPROXY_VALIDATE: failed to validate HAProxy configuration after uploading fragment "app": config invalid/,
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(6);
+    expect(sshRemoteCmd(4)).toBe(RESTORE_CONF_D_CMD);
+    expect(sshRemoteCmd(5)).toBe(HASH_CONF_D_CMD);
+    expect(core.info).toHaveBeenCalledWith("[HAPROXY_HASH] Phase: post-restore");
+  });
+
+  it("warns and continues when cleanup backup fails after successful fragment validation", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("cleanup failed"))
+      .mockResolvedValueOnce("");
+
+    await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).resolves.toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    expect(core.warning).toHaveBeenCalledWith(
+      "[HAPROXY_BACKUP] Failed to clean up conf.d backup (non-fatal): cleanup failed",
+    );
+    expect(sshRemoteCmd(5)).toBe(CLEANUP_CONF_D_BACKUP_CMD);
+    expect(sshRemoteCmd(6)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+  });
+
+  it("warns and continues when pre-upload hash logging fails", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("hash failed"))
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("");
+
+    await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).resolves.toEqual({
+      configUploaded: true,
+      serviceReloaded: true,
+    });
+
+    expect(core.warning).toHaveBeenCalledWith(
+      "[HAPROXY_HASH] Failed to compute conf.d hashes for phase pre-upload (non-fatal): hash failed",
+    );
+  });
+
+  it("fails immediately when conf.d backup cannot be created", async () => {
+    vi.mocked(ssh.sshExec).mockRejectedValueOnce(new Error("cp failed"));
+
+    await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).rejects.toThrow(
+      /HAPROXY_BACKUP: failed to snapshot conf.d: cp failed/,
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(1);
+    expect(sshRemoteCmd(0)).toBe(BACKUP_CONF_D_CMD);
+  });
+
+  it("fails with restore error when rollback restore fails", async () => {
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockRejectedValueOnce(new Error("config invalid"))
+      .mockRejectedValueOnce(new Error("restore failed"));
+
+    await expect(deployHaproxyFragment(BASE_FRAGMENT_OPTS)).rejects.toThrow(
+      /HAPROXY_RESTORE: failed to restore conf.d from backup: restore failed/,
+    );
+
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(5);
+    expect(sshRemoteCmd(4)).toBe(RESTORE_CONF_D_CMD);
   });
 });
 
@@ -390,6 +519,15 @@ describe("deployHaproxyCertbotFragment", () => {
       return CONFIG_CONTENT as never;
     });
 
+    vi.mocked(ssh.sshExec)
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("")
+      .mockResolvedValueOnce("");
+
     const result = await deployHaproxyCertbotFragment(BASE_CERTBOT_OPTS);
 
     expect(result).toEqual({
@@ -400,11 +538,15 @@ describe("deployHaproxyCertbotFragment", () => {
       expect.stringContaining(BUNDLED_CERTBOT_CFG_PATH_SUFFIX),
       "utf-8",
     );
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(3);
-    expect(sshRemoteCmd(0)).toContain(`'${REMOTE_CERTBOT_FRAGMENT_PATH}'`);
-    expect(sshRemoteCmd(0)).toContain("127.0.0.1:8081");
-    expect(sshRemoteCmd(1)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
-    expect(sshRemoteCmd(2)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(7);
+    expect(sshRemoteCmd(0)).toBe(BACKUP_CONF_D_CMD);
+    expect(sshRemoteCmd(1)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(2)).toContain(`'${REMOTE_CERTBOT_FRAGMENT_PATH}'`);
+    expect(sshRemoteCmd(2)).toContain("127.0.0.1:8081");
+    expect(sshRemoteCmd(3)).toBe(REMOTE_FRAGMENT_VALIDATE_CMD);
+    expect(sshRemoteCmd(4)).toBe(HASH_CONF_D_CMD);
+    expect(sshRemoteCmd(5)).toBe(CLEANUP_CONF_D_BACKUP_CMD);
+    expect(sshRemoteCmd(6)).toBe(START_OR_RELOAD_HAPROXY_FRAG_CMD);
   });
 });
 

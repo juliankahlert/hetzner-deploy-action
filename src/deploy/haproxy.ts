@@ -90,6 +90,9 @@ export interface HaproxyDeployResult {
 const ERR_UPLOAD = "HAPROXY_UPLOAD";
 const ERR_VALIDATE = "HAPROXY_VALIDATE";
 const ERR_RELOAD = "HAPROXY_RELOAD";
+const ERR_BACKUP = "HAPROXY_BACKUP";
+const ERR_RESTORE = "HAPROXY_RESTORE";
+const ERR_HASH = "HAPROXY_HASH";
 const ERR_SERVICE_INSTALL = "HAPROXY_SERVICE_INSTALL";
 const ERR_CERTBOT_READ = "HAPROXY_CERTBOT_READ";
 const ERR_CERTBOT_DEPLOY = "HAPROXY_CERTBOT_DEPLOY";
@@ -225,6 +228,102 @@ export function renderHaproxyCertbotFragment(certbotPort: string): string {
 
   core.info(`[${ERR_CERTBOT_DEPLOY}] HAProxy certbot fragment render complete.`);
   return rendered;
+}
+
+async function backupConfD(
+  keyPath: string,
+  user: string,
+  host: string,
+  ipv6Only: boolean,
+): Promise<void> {
+  core.info(`[${ERR_BACKUP}] Creating conf.d snapshot before fragment upload...`);
+  try {
+    await sshExec(
+      keyPath,
+      user,
+      host,
+      "sudo rm -rf /etc/haproxy/conf.d.bak && sudo cp -a /etc/haproxy/conf.d /etc/haproxy/conf.d.bak",
+      ipv6Only,
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`${ERR_BACKUP}: failed to snapshot conf.d: ${msg}`);
+  }
+  core.info(`[${ERR_BACKUP}] conf.d snapshot created at /etc/haproxy/conf.d.bak.`);
+}
+
+async function restoreConfD(
+  keyPath: string,
+  user: string,
+  host: string,
+  ipv6Only: boolean,
+): Promise<void> {
+  core.info(`[${ERR_RESTORE}] Restoring conf.d from backup after validation failure...`);
+  try {
+    await sshExec(
+      keyPath,
+      user,
+      host,
+      "sudo rm -rf /etc/haproxy/conf.d && sudo mv /etc/haproxy/conf.d.bak /etc/haproxy/conf.d",
+      ipv6Only,
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`${ERR_RESTORE}: failed to restore conf.d from backup: ${msg}`);
+  }
+  core.info(`[${ERR_RESTORE}] conf.d restored from backup successfully.`);
+}
+
+async function cleanupConfDBackup(
+  keyPath: string,
+  user: string,
+  host: string,
+  ipv6Only: boolean,
+): Promise<void> {
+  core.info(`[${ERR_BACKUP}] Cleaning up conf.d backup after successful validation...`);
+  try {
+    await sshExec(
+      keyPath,
+      user,
+      host,
+      "sudo rm -rf /etc/haproxy/conf.d.bak",
+      ipv6Only,
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    core.warning(`[${ERR_BACKUP}] Failed to clean up conf.d backup (non-fatal): ${msg}`);
+    return;
+  }
+  core.info(`[${ERR_BACKUP}] conf.d backup cleaned up.`);
+}
+
+async function logConfDHashes(
+  keyPath: string,
+  user: string,
+  host: string,
+  phase: "pre-upload" | "post-upload" | "post-restore",
+  ipv6Only: boolean,
+): Promise<void> {
+  core.info(`[${ERR_HASH}] Phase: ${phase}`);
+  try {
+    const output = await sshExec(
+      keyPath,
+      user,
+      host,
+      "sudo find /etc/haproxy/conf.d -name '*.cfg' -exec sha256sum {} +",
+      ipv6Only,
+    );
+    for (const line of output.split("\n")) {
+      if (line.trim()) {
+        core.info(`[${ERR_HASH}]   ${line.trim()}`);
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    core.warning(
+      `[${ERR_HASH}] Failed to compute conf.d hashes for phase ${phase} (non-fatal): ${msg}`,
+    );
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -510,6 +609,9 @@ export async function deployHaproxyFragment(
   }
 
   await withKeyFile(privateKey, async (keyPath) => {
+    await backupConfD(keyPath, user, host, ipv6Only);
+    await logConfDHashes(keyPath, user, host, "pre-upload", ipv6Only);
+
     core.info(
       `[${ERR_UPLOAD}] Uploading HAProxy fragment ${fragmentName} to ${remotePath}…`,
     );
@@ -542,12 +644,17 @@ export async function deployHaproxyFragment(
         ipv6Only,
       );
     } catch (err: unknown) {
+      await restoreConfD(keyPath, user, host, ipv6Only);
+      await logConfDHashes(keyPath, user, host, "post-restore", ipv6Only);
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
         `${ERR_VALIDATE}: failed to validate HAProxy configuration after uploading fragment "${fragmentName}": ${msg}`,
       );
     }
     core.info(`[${ERR_VALIDATE}] HAProxy configuration validation succeeded.`);
+
+    await logConfDHashes(keyPath, user, host, "post-upload", ipv6Only);
+    await cleanupConfDBackup(keyPath, user, host, ipv6Only);
 
     core.info(`[${ERR_RELOAD}] Reloading active haproxy-frag service or starting it if inactive…`);
     try {
@@ -613,6 +720,9 @@ export async function deployHaproxyFragmentWithoutReload(
   }
 
   await withKeyFile(privateKey, async (keyPath) => {
+    await backupConfD(keyPath, user, host, ipv6Only);
+    await logConfDHashes(keyPath, user, host, "pre-upload", ipv6Only);
+
     core.info(
       `[${ERR_UPLOAD}] Uploading HAProxy fragment ${fragmentName} to ${remotePath} without reloading haproxy-frag yet…`,
     );
@@ -645,11 +755,15 @@ export async function deployHaproxyFragmentWithoutReload(
         ipv6Only,
       );
     } catch (err: unknown) {
+      await restoreConfD(keyPath, user, host, ipv6Only);
+      await logConfDHashes(keyPath, user, host, "post-restore", ipv6Only);
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
         `${ERR_VALIDATE}: failed to validate HAProxy configuration after uploading fragment "${fragmentName}": ${msg}`,
       );
     }
+    await logConfDHashes(keyPath, user, host, "post-upload", ipv6Only);
+    await cleanupConfDBackup(keyPath, user, host, ipv6Only);
     core.info(
       `[${ERR_VALIDATE}] HAProxy configuration validation succeeded; deferring haproxy-frag reload until later in the pipeline.`,
     );
@@ -689,6 +803,9 @@ export async function deployHaproxyCertbotFragment(
   }
 
   await withKeyFile(privateKey, async (keyPath) => {
+    await backupConfD(keyPath, user, host, ipv6Only);
+    await logConfDHashes(keyPath, user, host, "pre-upload", ipv6Only);
+
     core.info(
       `[${ERR_CERTBOT_DEPLOY}] Uploading HAProxy certbot fragment ${fragmentName} to ${remotePath}…`,
     );
@@ -723,12 +840,17 @@ export async function deployHaproxyCertbotFragment(
         ipv6Only,
       );
     } catch (err: unknown) {
+      await restoreConfD(keyPath, user, host, ipv6Only);
+      await logConfDHashes(keyPath, user, host, "post-restore", ipv6Only);
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(
         `${ERR_CERTBOT_DEPLOY}: failed to validate HAProxy configuration after uploading certbot fragment "${fragmentName}": ${msg}`,
       );
     }
     core.info(`[${ERR_CERTBOT_DEPLOY}] HAProxy configuration validation succeeded.`);
+
+    await logConfDHashes(keyPath, user, host, "post-upload", ipv6Only);
+    await cleanupConfDBackup(keyPath, user, host, ipv6Only);
 
     core.info(
       `[${ERR_CERTBOT_DEPLOY}] Reloading active haproxy-frag service or starting it if inactive…`,
