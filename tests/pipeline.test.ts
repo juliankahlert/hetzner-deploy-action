@@ -838,6 +838,35 @@ describe("deployPipeline — stage ordering", () => {
     expect(deployHaproxyCertbotFragment).not.toHaveBeenCalled();
   });
 
+  it.each(["/hello", "/hello{,/**}"])(
+    "preserves slash-prefixed simplified route %s",
+    async (route) => {
+      await deployPipeline(
+        withInputs({
+          serviceName: "myapp",
+          hostPort: "443",
+          route,
+          appPort: "3000",
+        }),
+      );
+
+      expect(generateFragment).toHaveBeenCalledOnce();
+      expect(generateFragment).toHaveBeenCalledWith(expect.objectContaining({ domain: route }));
+      expect(compileFragment).toHaveBeenCalledOnce();
+      expect(deployHaproxyFragment).toHaveBeenCalledWith({
+        host: "1.2.3.4",
+        user: "deploy",
+        privateKey: "PRIVATE_KEY",
+        fragmentPath: "/tmp/haproxy-simplified-test/primary.cfg",
+        fragmentName: "myapp",
+        ipv6Only: false,
+      });
+      expect(deployHaproxyFragmentWithoutReload).not.toHaveBeenCalled();
+      expect(deployHaproxyCertbotFragment).not.toHaveBeenCalled();
+      expect(deployHaproxy).not.toHaveBeenCalled();
+    },
+  );
+
   it("deploys bundled base config before simplified fragment deployment", async () => {
     await deployPipeline(
       withInputs({ serviceName: "myapp", route: "example.com", appPort: "3000" }),
