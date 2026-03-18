@@ -79,6 +79,11 @@ interface ValidationRule {
 const SERVICE_USERNAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$/;
 const SERVICE_WORKING_DIRECTORY_PATTERN =
   /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$/;
+const ROUTE_PATH_ONLY_PATTERN =
+  String.raw`\/[a-zA-Z0-9][a-zA-Z0-9._:@-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._:@-]*)*(?:\{,\/\*\*\})?`;
+const ROUTE_PATTERN = new RegExp(
+  String.raw`^(?:\*|\/\*|${ROUTE_PATH_ONLY_PATTERN}|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$`,
+);
 
 /** Allowlist patterns — each must match the entire value. */
 const rules: ValidationRule[] = [
@@ -226,9 +231,9 @@ const rules: ValidationRule[] = [
   {
     field: "route",
     label: "route",
-    pattern: /^(?:\*|\/\*|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$/,
+    pattern: ROUTE_PATTERN,
     hint:
-      'Must be a simplified HAProxy route like "/*", "example.com", or "https://example.com/api{,/**}".',
+      'Must be a simplified HAProxy route like "/*", "/hello{,/**}", "example.com", or "https://example.com/api{,/**}".',
     optional: true,
   },
   {

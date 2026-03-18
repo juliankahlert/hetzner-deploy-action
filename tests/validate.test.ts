@@ -745,6 +745,38 @@ describe("validateInputs — simplified HAProxy inputs (optional)", () => {
     ).not.toThrow();
   });
 
+  it.each([
+    "/hello",
+    "/hello/world",
+    "/hello{,/**}",
+    "/hello/world{,/**}",
+  ])("accepts path-only simplified routes like %s", (route) => {
+    expect(() =>
+      validateInputs(
+        withOverride({
+          hostPort: "443",
+          route,
+          appPort: "8080",
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it.each(["/", "//hello", "/hello{/**}", "/hello{,/*}"])(
+    "rejects invalid path-only simplified routes like %s",
+    (route) => {
+      expect(() =>
+        validateInputs(
+          withOverride({
+            hostPort: "443",
+            route,
+            appPort: "8080",
+          }),
+        ),
+      ).toThrow(/INPUT_VALIDATION_/);
+    },
+  );
+
   it("rejects invalid host_port formats", () => {
     expect(() =>
       validateInputs(withOverride({ hostPort: "80:443" })),
