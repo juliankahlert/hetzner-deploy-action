@@ -190,7 +190,7 @@ describe("compileFragment", () => {
     const output = compileFragment(fragment, { addHeader: false });
 
     expect(output).toBe("frontend ft_8080\n  bind 127.0.0.1:8080\n");
-    expect(output).not.toMatch(/\n  acl /);
-    expect(output).not.toMatch(/\n  use_backend /);
+    expect(output).not.toMatch(/\n {2}acl /);
+    expect(output).not.toMatch(/\n {2}use_backend /);
   });
 });

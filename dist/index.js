@@ -44257,6 +44257,12 @@ var jsYaml = {
 
 
 
+;// CONCATENATED MODULE: external "node:fs"
+const external_node_fs_namespaceObject = require("node:fs");
+;// CONCATENATED MODULE: external "node:os"
+const external_node_os_namespaceObject = require("node:os");
+// EXTERNAL MODULE: external "node:path"
+var external_node_path_ = __nccwpck_require__(6760);
 ;// CONCATENATED MODULE: ./node_modules/hetzner-ts/dist/index.js
 var o=class{token;baseUrl;constructor(e,s){this.token=e,this.baseUrl=s||"https://api.hetzner.cloud/v1"}async request(e,s={}){let r=await fetch(`${this.baseUrl}${e}`,{...s,headers:{...s.headers||{},Authorization:`Bearer ${this.token}`,"Content-Type":"application/json"}}),t=r.status===204?null:await r.json();return r.ok?{success:!0,response:t}:{success:!1,response:t}}};var u=class extends o{async get(){return this.request("/pricing")}};var p=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/firewalls/actions${r?`?${r}`:""}`)}async get(e,s){return this.request(`/firewalls/${e}/actions/${s}`)}async applyToResources(e,s){return this.request(`/firewalls/${e}/actions/apply_to_resources`,{method:"POST",body:JSON.stringify({apply_to:s})})}async removeFromResources(e,s){return this.request(`/firewalls/${e}/actions/remove_from_resources`,{method:"POST",body:JSON.stringify({remove_from:s})})}async setRules(e,s){return this.request(`/firewalls/${e}/actions/set_rules`,{method:"POST",body:JSON.stringify({rules:s})})}async getFirewallActions(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/firewalls/${e}/actions${t?`?${t}`:""}`)}async getFirewallAction(e,s){return this.request(`/firewalls/${e}/actions/${s}`)}};var m=class extends o{_actions=null;get actions(){return this._actions||(this._actions=new p(this.token)),this._actions}async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/firewalls${r?`?${r}`:""}`)}async create(e){return this.request("/firewalls",{method:"POST",body:JSON.stringify(e)})}async get(e){return this.request(`/firewalls/${e}`)}async update(e,s){return this.request(`/firewalls/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/firewalls/${e}`,{method:"DELETE"})}};var l=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/floating_ips/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/floating_ips/actions/${e}`)}async listForFloatingIP(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/floating_ips/${e}/actions${t?`?${t}`:""}`)}async assign(e,s){return this.request(`/floating_ips/${e}/actions/assign`,{method:"POST",body:JSON.stringify(s)})}async unassign(e){return this.request(`/floating_ips/${e}/actions/unassign`,{method:"POST"})}async changeDNSPTR(e,s){return this.request(`/floating_ips/${e}/actions/change_dns_ptr`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/floating_ips/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}async getForFloatingIP(e,s){return this.request(`/floating_ips/${e}/actions/${s}`)}};var P=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/floating_ips${r?`?${r}`:""}`)}async get(e){return this.request(`/floating_ips/${e}`)}async create(e){return this.request("/floating_ips",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/floating_ips/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/floating_ips/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new l(this.token)),this._actions}};var d=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/locations${r?`?${r}`:""}`)}async get(e){return this.request(`/locations/${e}`)}},f=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/datacenters${r?`?${r}`:""}`)}async get(e){return this.request(`/datacenters/${e}`)}};var y=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/networks/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/networks/actions/${e}`)}async listForNetwork(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/networks/${e}/actions${t?`?${t}`:""}`)}async getForNetwork(e,s){return this.request(`/networks/${e}/actions/${s}`)}async addRoute(e,s){return this.request(`/networks/${e}/actions/add_route`,{method:"POST",body:JSON.stringify(s)})}async deleteRoute(e,s){return this.request(`/networks/${e}/actions/delete_route`,{method:"POST",body:JSON.stringify(s)})}async addSubnet(e,s){return this.request(`/networks/${e}/actions/add_subnet`,{method:"POST",body:JSON.stringify(s)})}async deleteSubnet(e,s){return this.request(`/networks/${e}/actions/delete_subnet`,{method:"POST",body:JSON.stringify(s)})}async changeIPRange(e,s){return this.request(`/networks/${e}/actions/change_ip_range`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/networks/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}};var g=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/networks${r?`?${r}`:""}`)}async create(e){return this.request("/networks",{method:"POST",body:JSON.stringify(e)})}async get(e){return this.request(`/networks/${e}`)}async update(e,s){return this.request(`/networks/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/networks/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new y(this.token)),this._actions}};var A=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/certificates/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/certificates/actions/${e}`)}async listForCertificate(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{Array.isArray(a)?a.forEach(c=>r.append(n,c.toString())):a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/certificates/${e}/actions${t?`?${t}`:""}`)}async getForCertificate(e,s){return this.request(`/certificates/${e}/actions/${s}`)}async retry(e){return this.request(`/certificates/${e}/actions/retry`,{method:"POST"})}};var h=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/certificates${r?`?${r}`:""}`)}async get(e){return this.request(`/certificates/${e}`)}async create(e){return this.request("/certificates",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/certificates/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/certificates/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new A(this.token)),this._actions}};var S=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/ssh_keys${r?`?${r}`:""}`)}async get(e){return this.request(`/ssh_keys/${e}`)}async create(e){return this.request("/ssh_keys",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/ssh_keys/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/ssh_keys/${e}`,{method:"DELETE"})}};var b=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/volumes/actions${r?`?${r}`:""}`)}async getGlobalAction(e){return this.request(`/volumes/actions/${e}`)}async listForVolume(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&(Array.isArray(a)?a.forEach(c=>r.append(n,c.toString())):r.append(n,a.toString()))});let t=r.toString();return this.request(`/volumes/${e}/actions${t?`?${t}`:""}`)}async getAction(e,s){return this.request(`/volumes/${e}/actions/${s}`)}async attach(e,s){return this.request(`/volumes/${e}/actions/attach`,{method:"POST",body:JSON.stringify(s)})}async detach(e){return this.request(`/volumes/${e}/actions/detach`,{method:"POST"})}async resize(e,s){return this.request(`/volumes/${e}/actions/resize`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/volumes/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}};var I=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/volumes${r?`?${r}`:""}`)}async get(e){return this.request(`/volumes/${e}`)}async create(e){return this.request("/volumes",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/volumes/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/volumes/${e}`,{method:"DELETE"})}get actions(){return this._actions||(this._actions=new b(this.token)),this._actions}};var E=class extends o{async getAllGlobal(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/load_balancers/actions${r?`?${r}`:""}`)}async getGlobalAction(e){return this.request(`/load_balancers/actions/${e}`)}async listForLoadBalancer(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&(Array.isArray(a)?a.forEach(c=>r.append(n,c.toString())):r.append(n,a.toString()))});let t=r.toString();return this.request(`/load_balancers/${e}/actions${t?`?${t}`:""}`)}async getAction(e,s){return this.request(`/load_balancers/${e}/actions/${s}`)}async addService(e,s){return this.request(`/load_balancers/${e}/actions/add_service`,{method:"POST",body:JSON.stringify(s)})}async updateService(e,s){return this.request(`/load_balancers/${e}/actions/update_service`,{method:"POST",body:JSON.stringify(s)})}async deleteService(e,s){return this.request(`/load_balancers/${e}/actions/delete_service`,{method:"POST",body:JSON.stringify(s)})}async addTarget(e,s){return this.request(`/load_balancers/${e}/actions/add_target`,{method:"POST",body:JSON.stringify(s)})}async removeTarget(e,s){return this.request(`/load_balancers/${e}/actions/remove_target`,{method:"POST",body:JSON.stringify(s)})}async attachToNetwork(e,s){return this.request(`/load_balancers/${e}/actions/attach_to_network`,{method:"POST",body:JSON.stringify(s)})}async detachFromNetwork(e,s){return this.request(`/load_balancers/${e}/actions/detach_from_network`,{method:"POST",body:JSON.stringify(s)})}async changeAlgorithm(e,s){return this.request(`/load_balancers/${e}/actions/change_algorithm`,{method:"POST",body:JSON.stringify(s)})}async changeDNSPTR(e,s){return this.request(`/load_balancers/${e}/actions/change_dns_ptr`,{method:"POST",body:JSON.stringify(s)})}async changeProtection(e,s){return this.request(`/load_balancers/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify(s)})}async changeType(e,s){return this.request(`/load_balancers/${e}/actions/change_type`,{method:"POST",body:JSON.stringify(s)})}async enablePublicInterface(e){return this.request(`/load_balancers/${e}/actions/enable_public_interface`,{method:"POST"})}async disablePublicInterface(e){return this.request(`/load_balancers/${e}/actions/disable_public_interface`,{method:"POST"})}};var _=class extends o{_actions=null;async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/load_balancers${r?`?${r}`:""}`)}async create(e){return this.request("/load_balancers",{method:"POST",body:JSON.stringify(e)})}async get(e){return this.request(`/load_balancers/${e}`)}async update(e,s){return this.request(`/load_balancers/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/load_balancers/${e}`,{method:"DELETE"})}async getMetrics(e,s){let r=new URLSearchParams;return Object.entries(s).forEach(([t,n])=>{n!==void 0&&r.append(t,n.toString())}),this.request(`/load_balancers/${e}/metrics?${r.toString()}`)}async listTypes(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/load_balancer_types${r?`?${r}`:""}`)}async getType(e){return this.request(`/load_balancer_types/${e}`)}get actions(){return this._actions||(this._actions=new E(this.token)),this._actions}};var R=class extends o{async getAll(e){return this.request(`/actions?id=${e}`)}async get(e){return this.request(`/actions/${e}`)}};var w=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/images${s?`?${s}`:""}`)}async get(e){return this.request(`/images/${e}`)}async update(e,s){return this.request(`/images/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/images/${e}`,{method:"DELETE"})}};var q=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/primary_ips${s?`?${s}`:""}`)}async get(e){return this.request(`/primary_ips/${e}`)}async create(e){return this.request("/primary_ips",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/primary_ips/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/primary_ips/${e}`,{method:"DELETE"})}};var L=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/placement_groups${s?`?${s}`:""}`)}async get(e){return this.request(`/placement_groups/${e}`)}async create(e){return this.request("/placement_groups",{method:"POST",body:JSON.stringify(e)})}async update(e,s){return this.request(`/placement_groups/${e}`,{method:"PUT",body:JSON.stringify(s)})}async delete(e){return this.request(`/placement_groups/${e}`,{method:"DELETE"})}};var B=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/isos${s?`?${s}`:""}`)}async get(e){return this.request(`/isos/${e}`)}};var $=class extends o{async getAll(e){let s=new URLSearchParams;return e&&Object.entries(e).forEach(([r,t])=>{t!=null&&t!==""&&s.append(r,t.toString())}),this.request(`/server_types${s?`?${s}`:""}`)}async get(e){return this.request(`/server_types/${e}`)}};var O=class extends o{async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&(Array.isArray(n)?n.forEach(a=>s.append(t,a.toString())):s.append(t,n.toString()))});let r=s.toString();return this.request(`/servers/actions${r?`?${r}`:""}`)}async get(e){return this.request(`/servers/actions/${e}`)}async getAllByServer(e,s){let r=new URLSearchParams;s&&Object.entries(s).forEach(([n,a])=>{a!==void 0&&r.append(n,a.toString())});let t=r.toString();return this.request(`/servers/${e}/actions${t?`?${t}`:""}`)}async addServerToPlacementGroup(e,s){return this.request(`/servers/${e}/actions/add_to_placement_group`,{method:"POST",body:JSON.stringify({placement_group:s})})}async attachIsoToServer(e,s){return this.request(`/servers/${e}/actions/attach_iso`,{method:"POST",body:JSON.stringify({iso:s})})}async attachServerToNetwork(e,s,r,t){return this.request(`/servers/${e}/actions/attach_to_network`,{method:"POST",body:JSON.stringify({network:s,ip:r,alias_ips:t})})}async changeAliasIpOfNetwork(e,s,r){return this.request(`/servers/${e}/actions/change_alias_ips`,{method:"POST",body:JSON.stringify({network:s,alias_ips:r})})}async changeReverseDnsEntryForServer(e,s,r){return this.request(`/servers/${e}/actions/change_reverse_dns`,{method:"POST",body:JSON.stringify({ip:s,dns_ptr:r})})}async changeServerProtection(e,s,r){return this.request(`/servers/${e}/actions/change_protection`,{method:"POST",body:JSON.stringify({protect:s,rebuild:r})})}async changeServerType(e,s,r){return this.request(`/servers/${e}/actions/change_type`,{method:"POST",body:JSON.stringify({type:s,upgrade_disk:r})})}async createImageFromServer(e,s,r,t){return this.request(`/servers/${e}/actions/create_image`,{method:"POST",body:JSON.stringify({type:s,description:r,labels:t})})}async detachServerFromNetwork(e,s){return this.request(`/servers/${e}/actions/detach_from_network`,{method:"POST",body:JSON.stringify({network:s})})}async detachIsoFromServer(e){return this.request(`/servers/${e}/actions/detach_iso`,{method:"POST"})}async disableBackupsForServer(e){return this.request(`/servers/${e}/actions/disable_backups`,{method:"POST"})}async disableRescueModeForServer(e){return this.request(`/servers/${e}/actions/disable_rescue`,{method:"POST"})}async enableBackupsForServer(e){return this.request(`/servers/${e}/actions/enable_backups`,{method:"POST"})}async enableRescueModeForServer(e,s,r){return this.request(`/servers/${e}/actions/enable_rescue`,{method:"POST"})}async powerOff(e){return this.request(`/servers/${e}/actions/poweroff`,{method:"POST"})}async powerOn(e){return this.request(`/servers/${e}/actions/poweron`,{method:"POST"})}async softReboot(e){return this.request(`/servers/${e}/actions/reboot`,{method:"POST"})}async rebuildFromImage(e,s){return this.request(`/servers/${e}/actions/rebuild`,{method:"POST",body:JSON.stringify({image:s})})}async removeFromPlacementGroup(e){return this.request(`/servers/${e}/actions/remove_from_placement_group`,{method:"POST"})}async requestConsoleForServer(e){return this.request(`/servers/${e}/actions/request_console`,{method:"POST"})}async resetServer(e){return this.request(`/servers/${e}/actions/reset`,{method:"POST"})}async resetServerPassword(e){return this.request(`/servers/${e}/actions/reset_password`,{method:"POST"})}async shutdownServer(e){return this.request(`/servers/${e}/actions/shutdown`,{method:"POST"})}async getActionForServer(e,s){return this.request(`/servers/${e}/actions/${s}`)}};var T=class extends o{_primaryIP=null;_images=null;_placementGroups=null;_isos=null;_serverTypes=null;_actions=null;get primaryIP(){return this._primaryIP||(this._primaryIP=new q(this.token)),this._primaryIP}get images(){return this._images||(this._images=new w(this.token)),this._images}get placementGroups(){return this._placementGroups||(this._placementGroups=new L(this.token)),this._placementGroups}get isos(){return this._isos||(this._isos=new B(this.token)),this._isos}get serverTypes(){return this._serverTypes||(this._serverTypes=new $(this.token)),this._serverTypes}get actions(){return this._actions||(this._actions=new O(this.token)),this._actions}async getAll(e){let s=new URLSearchParams;e&&Object.entries(e).forEach(([t,n])=>{n!==void 0&&s.append(t,n.toString())});let r=s.toString();return this.request(`/servers${r?`?${r}`:""}`)}async get(e){return this.request(`/servers/${e}`)}async create(e){return this.request("/servers",{method:"POST",body:JSON.stringify(e)})}async delete(e){return this.request(`/servers/${e}`,{method:"DELETE"})}getMetrics(e,s,r,t,n){return this.request(`/servers/${e}/metrics?type=${s}&start=${r}&end=${t}&step=${n}`)}};var k=class extends o{get actions(){return new R(this.token)}get billing(){return new u(this.token)}get certificates(){return new h(this.token)}get datacenters(){return new f(this.token)}get firewalls(){return new m(this.token)}get floatingIps(){return new P(this.token)}get loadBalancers(){return new _(this.token)}get locations(){return new d(this.token)}get networks(){return new g(this.token)}get servers(){return new T(this.token)}get sshKeys(){return new S(this.token)}get volumes(){return new I(this.token)}};
 //# sourceMappingURL=index.js.map
@@ -44474,14 +44480,8 @@ async function findOrCreateServer(client, opts) {
     throw new Error(`Server "${opts.name}" did not reach "running" status within ${(MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS) / 1000}s`);
 }
 //# sourceMappingURL=findOrCreateServer.js.map
-;// CONCATENATED MODULE: external "node:fs"
-const external_node_fs_namespaceObject = require("node:fs");
-// EXTERNAL MODULE: external "node:path"
-var external_node_path_ = __nccwpck_require__(6760);
 // EXTERNAL MODULE: ./node_modules/@actions/exec/lib/exec.js
 var exec = __nccwpck_require__(5236);
-;// CONCATENATED MODULE: external "node:os"
-const external_node_os_namespaceObject = require("node:os");
 ;// CONCATENATED MODULE: ./lib/deploy/ssh.js
 
 
@@ -46025,6 +46025,436 @@ async function deployHaproxyCertbotFragment(opts) {
     return result;
 }
 //# sourceMappingURL=haproxy.js.map
+;// CONCATENATED MODULE: ./lib/deploy/haproxyCompiler.js
+
+const HAPROXY_COMPILE_LOG_PREFIX = "[HAPROXY_COMPILE]";
+const GENERATED_HEADER = "# Generated from JSON fragment — do not edit manually";
+const INDENT = "  ";
+function compareLexicographically(a, b) {
+    if (a < b) {
+        return -1;
+    }
+    if (a > b) {
+        return 1;
+    }
+    return 0;
+}
+function renderFrontendBlock(port, frontend) {
+    const lines = [`frontend ft_${port}`, `${INDENT}bind ${frontend.bind}`];
+    for (const acl of frontend.acl) {
+        lines.push(`${INDENT}acl ${acl}`);
+    }
+    for (const backendRule of frontend.use_backend) {
+        lines.push(`${INDENT}use_backend ${backendRule}`);
+    }
+    if (frontend.default_backend) {
+        lines.push(`${INDENT}default_backend ${frontend.default_backend}`);
+    }
+    return lines.join("\n");
+}
+function renderBackendBlock(name, backend) {
+    const lines = [`backend ${name}`, `${INDENT}mode ${backend.mode}`];
+    for (const server of backend.server) {
+        lines.push(`${INDENT}server ${server}`);
+    }
+    return lines.join("\n");
+}
+function compileFragment(fragment, options) {
+    const addHeader = options?.addHeader !== false;
+    const frontendPorts = Object.keys(fragment.frontend).sort(compareLexicographically);
+    const backendNames = Object.keys(fragment.backend).sort(compareLexicographically);
+    lib_core.info(`${HAPROXY_COMPILE_LOG_PREFIX} Starting local HAProxy fragment compilation.`);
+    lib_core.debug(`${HAPROXY_COMPILE_LOG_PREFIX} Header rendering is ${addHeader ? "enabled" : "disabled"}.`);
+    lib_core.debug(`${HAPROXY_COMPILE_LOG_PREFIX} Frontend render order: ${frontendPorts.length > 0 ? frontendPorts.join(", ") : "(none)"}.`);
+    lib_core.debug(`${HAPROXY_COMPILE_LOG_PREFIX} Backend render order: ${backendNames.length > 0 ? backendNames.join(", ") : "(none)"}.`);
+    const blocks = [];
+    for (const port of frontendPorts) {
+        lib_core.debug(`${HAPROXY_COMPILE_LOG_PREFIX} Rendering frontend block for port ${port}.`);
+        blocks.push(renderFrontendBlock(port, fragment.frontend[port]));
+    }
+    for (const name of backendNames) {
+        lib_core.debug(`${HAPROXY_COMPILE_LOG_PREFIX} Rendering backend block ${name}.`);
+        blocks.push(renderBackendBlock(name, fragment.backend[name]));
+    }
+    const renderedBlocks = blocks.join("\n\n");
+    if (addHeader) {
+        const output = renderedBlocks ? `${GENERATED_HEADER}\n${renderedBlocks}\n` : `${GENERATED_HEADER}\n`;
+        lib_core.info(`${HAPROXY_COMPILE_LOG_PREFIX} Local HAProxy fragment compilation complete.`);
+        return output;
+    }
+    const output = renderedBlocks ? `${renderedBlocks}\n` : "\n";
+    lib_core.info(`${HAPROXY_COMPILE_LOG_PREFIX} Local HAProxy fragment compilation complete.`);
+    return output;
+}
+//# sourceMappingURL=haproxyCompiler.js.map
+;// CONCATENATED MODULE: ./lib/deploy/haproxyTypes.js
+/* ------------------------------------------------------------------ */
+/*  HAProxy JSON Fragment Schema, Route Normalizer & Validator        */
+/*                                                                    */
+/*  This module defines the type contract consumed by the fragment    */
+/*  generator (rWP-2), the remote compiler (rWP-3), and the frag.d   */
+/*  management layer (rWP-4).  It also provides the route normalizer  */
+/*  and a collect-all fragment validator.                              */
+/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/*  Shared constants                                                  */
+/* ------------------------------------------------------------------ */
+/**
+ * Regex matching residual Mustache-style template tokens like
+ * `{{service}}`.  Used by both the validator (AC-G9) and the
+ * generator to detect un-substituted placeholders.
+ */
+const TEMPLATE_TOKEN_RE = /\{\{[^}]+\}\}/;
+/* ------------------------------------------------------------------ */
+/*  Internal helpers                                                  */
+/* ------------------------------------------------------------------ */
+function isNonNullObject(v) {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function isStringArray(v) {
+    return Array.isArray(v) && v.every((item) => typeof item === "string");
+}
+function checkTemplateTokens(value, path, errors) {
+    const match = TEMPLATE_TOKEN_RE.exec(value);
+    if (match) {
+        errors.push({
+            path,
+            message: `Residual template token found: '${match[0]}'`,
+        });
+    }
+}
+/* ------------------------------------------------------------------ */
+/*  Route normalizer                                                  */
+/* ------------------------------------------------------------------ */
+/** Glob suffix that maps to path-prefix ACL semantics. */
+const GLOB_SUFFIX = "{,/**}";
+/**
+ * Normalize a raw route string into structured host/path components.
+ *
+ * Rules (from the HAProxy overview spec):
+ *   1. Strip scheme (`http://`, `https://`)
+ *   2. Lowercase host portion only (path case is preserved)
+ *   3. Trim trailing slashes (unless path is exactly `/`)
+ *   4. Detect host-only vs host+path
+ *   5. Handle glob `{,/**}` → path-prefix semantics
+ *   6. Default `/*` or empty → catch-all
+ */
+function normalizeRoute(raw) {
+    let s = raw.trim();
+    // Catch-all detection (before any other processing)
+    if (s === "" || s === "/*" || s === "*") {
+        return { kind: "catch-all", host: undefined, path: undefined, isPathPrefix: false };
+    }
+    // Strip scheme
+    s = s.replace(/^https?:\/\//, "");
+    // Detect and strip glob suffix → sets prefix flag
+    let isPathPrefix = false;
+    if (s.endsWith(GLOB_SUFFIX)) {
+        isPathPrefix = true;
+        s = s.slice(0, -GLOB_SUFFIX.length);
+    }
+    // Split host from path at first "/"
+    const slashIdx = s.indexOf("/");
+    let host;
+    let rawPath;
+    if (slashIdx === -1) {
+        host = s;
+        rawPath = undefined;
+    }
+    else {
+        host = s.slice(0, slashIdx);
+        rawPath = s.slice(slashIdx); // includes leading "/"
+    }
+    // Lowercase host only (path case preserved)
+    host = host.toLowerCase();
+    // No path → host-only
+    if (rawPath === undefined || rawPath === "") {
+        return { kind: "host-only", host, path: undefined, isPathPrefix: false };
+    }
+    // Trim trailing slashes (unless path is exactly "/")
+    const pathResult = rawPath.replace(/\/+$/, "") || "/";
+    // Path reduced to just "/" → treat as host-only (no meaningful path)
+    if (pathResult === "/") {
+        return { kind: "host-only", host, path: undefined, isPathPrefix: false };
+    }
+    // Host + path
+    return { kind: "host-path", host, path: pathResult, isPathPrefix };
+}
+/* ------------------------------------------------------------------ */
+/*  Fragment validator                                                */
+/* ------------------------------------------------------------------ */
+function validateFrontendEntry(port, entry, errors) {
+    const prefix = `frontend.${port}`;
+    if (!isNonNullObject(entry)) {
+        errors.push({ path: prefix, message: "frontend entry must be a non-null object" });
+        return;
+    }
+    // bind
+    if (typeof entry.bind !== "string") {
+        errors.push({ path: `${prefix}.bind`, message: "'bind' must be a string" });
+    }
+    else {
+        checkTemplateTokens(entry.bind, `${prefix}.bind`, errors);
+    }
+    // acl
+    if (!isStringArray(entry.acl)) {
+        errors.push({ path: `${prefix}.acl`, message: "'acl' must be an array of strings" });
+    }
+    else {
+        for (let i = 0; i < entry.acl.length; i++) {
+            checkTemplateTokens(entry.acl[i], `${prefix}.acl[${i}]`, errors);
+        }
+    }
+    // use_backend
+    if (!isStringArray(entry.use_backend)) {
+        errors.push({
+            path: `${prefix}.use_backend`,
+            message: "'use_backend' must be an array of strings",
+        });
+    }
+    else {
+        for (let i = 0; i < entry.use_backend.length; i++) {
+            checkTemplateTokens(entry.use_backend[i], `${prefix}.use_backend[${i}]`, errors);
+        }
+    }
+    // optional default_backend
+    if ("default_backend" in entry && typeof entry.default_backend === "string") {
+        checkTemplateTokens(entry.default_backend, `${prefix}.default_backend`, errors);
+    }
+}
+function validateBackendEntry(name, entry, errors) {
+    const prefix = `backend.${name}`;
+    if (!isNonNullObject(entry)) {
+        errors.push({ path: prefix, message: "backend entry must be a non-null object" });
+        return;
+    }
+    // mode
+    if (typeof entry.mode !== "string") {
+        errors.push({ path: `${prefix}.mode`, message: "'mode' must be a string" });
+    }
+    else {
+        checkTemplateTokens(entry.mode, `${prefix}.mode`, errors);
+    }
+    // server
+    if (!isStringArray(entry.server)) {
+        errors.push({ path: `${prefix}.server`, message: "'server' must be an array of strings" });
+    }
+    else {
+        for (let i = 0; i < entry.server.length; i++) {
+            checkTemplateTokens(entry.server[i], `${prefix}.server[${i}]`, errors);
+        }
+    }
+}
+/**
+ * Validate an HAProxy JSON fragment against the expected schema.
+ *
+ * Returns **all** validation errors found (collect-all pattern — does
+ * not throw).  An empty array means the fragment is valid.
+ */
+function validateFragment(fragment) {
+    const errors = [];
+    // V1: top-level shape
+    if (!isNonNullObject(fragment)) {
+        errors.push({ path: "", message: "Fragment must be a non-null object" });
+        return errors; // cannot proceed further
+    }
+    // V2 + V3: frontend
+    if (!isNonNullObject(fragment.frontend)) {
+        errors.push({ path: "frontend", message: "'frontend' must be a non-null object" });
+    }
+    else {
+        const frontendKeys = Object.keys(fragment.frontend);
+        if (frontendKeys.length === 0) {
+            errors.push({
+                path: "frontend",
+                message: "'frontend' must contain at least one port entry",
+            });
+        }
+        else {
+            for (const [port, entry] of Object.entries(fragment.frontend)) {
+                validateFrontendEntry(port, entry, errors);
+            }
+        }
+    }
+    // V7: backend
+    if (!isNonNullObject(fragment.backend)) {
+        errors.push({ path: "backend", message: "'backend' must be a non-null object" });
+    }
+    else {
+        for (const [name, entry] of Object.entries(fragment.backend)) {
+            validateBackendEntry(name, entry, errors);
+        }
+    }
+    return errors;
+}
+//# sourceMappingURL=haproxyTypes.js.map
+;// CONCATENATED MODULE: ./lib/deploy/haproxyGenerator.js
+
+
+const HAPROXY_GENERATE_LOG_PREFIX = "[HAPROXY_GENERATE]";
+const DEFAULT_CERTBOT_PORT = 8888;
+const CERTBOT_FRONTEND_KEY = "80";
+const CERTBOT_ACL = "acme_challenge path_beg /.well-known/acme-challenge/";
+const CERTBOT_USE_BACKEND = "bk_certbot if acme_challenge";
+const CERTBOT_BACKEND_NAME = "bk_certbot";
+const CERTBOT_SERVER_NAME = "certbot";
+function prefixedMessage(message) {
+    return `${HAPROXY_GENERATE_LOG_PREFIX} ${message}`;
+}
+function createGenerationError(message) {
+    return new Error(prefixedMessage(message));
+}
+function buildHostAclTemplate(route) {
+    if (!route.host) {
+        throw createGenerationError("cannot build host ACL template without a normalized host");
+    }
+    return `host_{{service}} hdr(host) -i ${route.host}`;
+}
+function buildUseBackendRuleTemplate(route) {
+    const backendName = "bk_{{service}}";
+    const hostAclName = "host_{{service}}";
+    if (route.kind === "host-only") {
+        return `${backendName} if ${hostAclName}`;
+    }
+    if (route.kind !== "host-path" || !route.path) {
+        throw createGenerationError("cannot build backend rule template for non-routable path state");
+    }
+    const pathCondition = route.isPathPrefix
+        ? `{ path_beg -i ${route.path} }`
+        : `{ path -i ${route.path} }`;
+    return `${backendName} if ${hostAclName} ${pathCondition}`;
+}
+function summarizeValidationErrors(fragment) {
+    const errors = validateFragment(fragment);
+    if (errors.length === 0) {
+        return "";
+    }
+    const summary = errors
+        .map((error) => `${error.path || "<root>"}: ${error.message}`)
+        .join("; ");
+    return `fragment validation failed with ${errors.length} error(s): ${summary}`;
+}
+function assertValidFragment(fragment, context) {
+    const validationSummary = summarizeValidationErrors(fragment);
+    if (validationSummary) {
+        throw createGenerationError(`${context}: ${validationSummary}`);
+    }
+}
+function createCertbotFragment(certbotPort) {
+    return {
+        frontend: {
+            [CERTBOT_FRONTEND_KEY]: {
+                bind: "*:80",
+                acl: [CERTBOT_ACL],
+                use_backend: [CERTBOT_USE_BACKEND],
+            },
+        },
+        backend: {
+            [CERTBOT_BACKEND_NAME]: {
+                mode: "http",
+                server: [`${CERTBOT_SERVER_NAME} 127.0.0.1:${certbotPort} check`],
+            },
+        },
+    };
+}
+function mergeCertbotIntoFragment(fragment, certbotPort) {
+    const frontendEntry = fragment.frontend[CERTBOT_FRONTEND_KEY];
+    if (!frontendEntry) {
+        throw createGenerationError("cannot merge certbot fragment without an existing port-80 frontend");
+    }
+    return {
+        frontend: {
+            ...fragment.frontend,
+            [CERTBOT_FRONTEND_KEY]: {
+                ...frontendEntry,
+                acl: [CERTBOT_ACL, ...frontendEntry.acl],
+                use_backend: [CERTBOT_USE_BACKEND, ...frontendEntry.use_backend],
+            },
+        },
+        backend: {
+            ...fragment.backend,
+            [CERTBOT_BACKEND_NAME]: {
+                mode: "http",
+                server: [`${CERTBOT_SERVER_NAME} 127.0.0.1:${certbotPort} check`],
+            },
+        },
+    };
+}
+function resolveServiceTokens(template, serviceName) {
+    const resolved = template.replaceAll("{{service}}", serviceName);
+    const unresolvedToken = TEMPLATE_TOKEN_RE.exec(resolved);
+    if (unresolvedToken) {
+        throw createGenerationError(`unresolved template token '${unresolvedToken[0]}' in value: ${template}`);
+    }
+    return resolved;
+}
+function generateFragment(inputs) {
+    lib_core.info(prefixedMessage(`Generating HAProxy fragment for service '${inputs.serviceName}' on bind port ${inputs.bindPort}.`));
+    const route = normalizeRoute(inputs.domain ?? "");
+    const frontendKey = String(inputs.bindPort);
+    const frontendBind = inputs.sslCertPath
+        ? `*:${inputs.bindPort} ssl crt ${inputs.sslCertPath}`
+        : `*:${inputs.bindPort}`;
+    const backendName = resolveServiceTokens("bk_{{service}}", inputs.serviceName);
+    const serverName = resolveServiceTokens("{{service}}_1", inputs.serviceName);
+    const includeHealthCheck = inputs.healthCheck === undefined || Boolean(inputs.healthCheck);
+    const serverTarget = `${inputs.backendAddress}:${inputs.backendPort}`;
+    const serverLine = includeHealthCheck
+        ? `${serverName} ${serverTarget} check`
+        : `${serverName} ${serverTarget}`;
+    const fragment = {
+        frontend: {
+            [frontendKey]: {
+                bind: frontendBind,
+                acl: [],
+                use_backend: [],
+            },
+        },
+        backend: {
+            [backendName]: {
+                mode: inputs.mode ?? "http",
+                server: [serverLine],
+            },
+        },
+    };
+    const frontendEntry = fragment.frontend[frontendKey];
+    switch (route.kind) {
+        case "catch-all": {
+            frontendEntry.default_backend = backendName;
+            break;
+        }
+        case "host-only":
+        case "host-path": {
+            frontendEntry.acl.push(resolveServiceTokens(buildHostAclTemplate(route), inputs.serviceName));
+            frontendEntry.use_backend.push(resolveServiceTokens(buildUseBackendRuleTemplate(route), inputs.serviceName));
+            break;
+        }
+        default: {
+            throw createGenerationError(`unsupported normalized route kind: ${route.kind}`);
+        }
+    }
+    let finalFragment = fragment;
+    let certbotFragment;
+    if (inputs.certbot === true) {
+        const certbotPort = inputs.certbotPort ?? DEFAULT_CERTBOT_PORT;
+        lib_core.info(prefixedMessage(`Generating certbot fragment for port ${certbotPort}.`));
+        if (inputs.bindPort === 80) {
+            lib_core.info(prefixedMessage("Merging certbot routing into primary port-80 frontend."));
+            finalFragment = mergeCertbotIntoFragment(fragment, certbotPort);
+        }
+        else {
+            lib_core.info(prefixedMessage("Returning separate certbot fragment for port-80 frontend."));
+            certbotFragment = createCertbotFragment(certbotPort);
+        }
+    }
+    assertValidFragment(finalFragment, "invalid primary fragment output");
+    if (certbotFragment) {
+        assertValidFragment(certbotFragment, "invalid certbot fragment output");
+    }
+    lib_core.info(prefixedMessage(`Generated HAProxy fragment for service '${inputs.serviceName}' with route kind '${route.kind}'.`));
+    return { fragment: finalFragment, certbotFragment };
+}
+//# sourceMappingURL=haproxyGenerator.js.map
 ;// CONCATENATED MODULE: ./lib/deploy/firewall.js
 
 
@@ -46162,7 +46592,19 @@ async function configureFirewall(options) {
 
 
 
-const DEFAULT_CERTBOT_PORT = "8888";
+
+
+
+
+
+
+const pipeline_DEFAULT_CERTBOT_PORT = "8888";
+const DEFAULT_SIMPLIFIED_HOST_PORT = 443;
+const DEFAULT_SIMPLIFIED_ROUTE = "/*";
+const DEFAULT_SIMPLIFIED_FRAGMENT_NAME = "json-fragment";
+const DEFAULT_SIMPLIFIED_SSL_CERT_PATH = "/etc/haproxy/certs/";
+const CERTBOT_FRAGMENT_NAME = "certbot";
+const HAPROXY_SIMPLIFIED_LOG_PREFIX = "[HAPROXY_SIMPLIFIED]";
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
 /* ------------------------------------------------------------------ */
@@ -46200,6 +46642,18 @@ function mergeHaproxyResult(current, next) {
         serviceReloaded: current.serviceReloaded || next.serviceReloaded,
     };
 }
+function hasSimplifiedHaproxyInputs(inputs) {
+    return Boolean(inputs.hostPort || inputs.route || inputs.appPort);
+}
+function hasRawHaproxyInputs(inputs) {
+    return Boolean(inputs.haproxyCfg || inputs.haproxyFragment);
+}
+function resolveSimplifiedFragmentName(inputs) {
+    return (inputs.service?.name ||
+        inputs.serviceName ||
+        inputs.haproxyFragmentName ||
+        DEFAULT_SIMPLIFIED_FRAGMENT_NAME);
+}
 /* ------------------------------------------------------------------ */
 /*  Stage predicates                                                  */
 /* ------------------------------------------------------------------ */
@@ -46216,7 +46670,10 @@ function activeStages(inputs) {
             case STAGES.systemd:
                 return Boolean(inputs.service?.name) && !inputs.containerImage;
             case STAGES.haproxy:
-                return Boolean(inputs.haproxyCfg || inputs.haproxyFragment || inputs.certbot);
+                return Boolean(inputs.haproxyCfg ||
+                    inputs.haproxyFragment ||
+                    inputs.certbot ||
+                    hasSimplifiedHaproxyInputs(inputs));
             case STAGES.firewall:
                 return Boolean(inputs.firewallEnabled);
         }
@@ -46396,12 +46853,19 @@ async function deployPipeline(inputs) {
                     lib_core.info(`Service unit "${inputs.service.name}" installed and restarted.`);
                     break;
                 case STAGES.haproxy:
-                    if (!inputs.haproxyCfg && !inputs.haproxyFragment && !inputs.certbot) {
-                        throw new Error("haproxy_cfg, haproxy_fragment, or certbot is required for haproxy deployment");
+                    if (!inputs.haproxyCfg &&
+                        !inputs.haproxyFragment &&
+                        !inputs.certbot &&
+                        !hasSimplifiedHaproxyInputs(inputs)) {
+                        throw new Error("haproxy_cfg, haproxy_fragment, certbot, or simplified HAProxy inputs are required for haproxy deployment");
                     }
                     {
-                        const shouldDeployBaseConfig = !inputs.haproxyCfg && (Boolean(inputs.haproxyFragment) || inputs.certbot);
-                        const certbotPort = inputs.certbotPort ?? DEFAULT_CERTBOT_PORT;
+                        const simplifiedInputsPresent = hasSimplifiedHaproxyInputs(inputs);
+                        const rawHaproxyInputsPresent = hasRawHaproxyInputs(inputs);
+                        const useSimplifiedHaproxyFlow = simplifiedInputsPresent && !rawHaproxyInputsPresent;
+                        const shouldDeployBaseConfig = !inputs.haproxyCfg &&
+                            (Boolean(inputs.haproxyFragment) || inputs.certbot || useSimplifiedHaproxyFlow);
+                        const certbotPort = inputs.certbotPort ?? pipeline_DEFAULT_CERTBOT_PORT;
                         await ensureHaproxyFragService({
                             host: server.ip,
                             user: inputs.sshUser,
@@ -46425,6 +46889,82 @@ async function deployPipeline(inputs) {
                                 privateKey: inputs.sshPrivateKey,
                                 ipv6Only: effectiveIpv6Only,
                             }));
+                        }
+                        if (useSimplifiedHaproxyFlow) {
+                            lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Simplified-input branch selected for HAProxy stage (raw file inputs not selected).`);
+                            if (!inputs.appPort) {
+                                throw new Error("app_port is required for simplified HAProxy deployment when host_port or route is provided");
+                            }
+                            const bindPort = Number(inputs.hostPort ?? DEFAULT_SIMPLIFIED_HOST_PORT);
+                            const backendPort = Number(inputs.appPort);
+                            const routeInput = inputs.route ?? DEFAULT_SIMPLIFIED_ROUTE;
+                            const normalizedRoute = normalizeRoute(routeInput);
+                            const fragmentName = resolveSimplifiedFragmentName(inputs);
+                            const serviceName = resolveSimplifiedFragmentName(inputs);
+                            lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Normalized route summary: kind=${normalizedRoute.kind}, host=${normalizedRoute.host ?? "(none)"}, path=${normalizedRoute.path ?? "(none)"}, prefix=${normalizedRoute.isPathPrefix ? "yes" : "no"}.`);
+                            const generated = generateFragment({
+                                serviceName,
+                                bindPort,
+                                backendAddress: "127.0.0.1",
+                                backendPort,
+                                domain: routeInput,
+                                certbot: inputs.certbot,
+                                certbotPort: Number(certbotPort),
+                                sslCertPath: bindPort === 443 ? DEFAULT_SIMPLIFIED_SSL_CERT_PATH : undefined,
+                            });
+                            const hasSeparateCertbotFragment = Boolean(generated.certbotFragment);
+                            lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Local certbot merge decision: ${inputs.certbot ? (hasSeparateCertbotFragment ? "compile separate certbot fragment" : "certbot merged into primary fragment") : "certbot disabled; primary fragment only"}.`);
+                            let tempDir;
+                            try {
+                                tempDir = external_node_fs_namespaceObject.mkdtempSync(external_node_path_.join(external_node_os_namespaceObject.tmpdir(), "haproxy-simplified-"));
+                                lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Created temp directory for compiled fragments: ${tempDir}.`);
+                                const primaryTempPath = external_node_path_.join(tempDir, "primary.cfg");
+                                const compiledPrimary = compileFragment(generated.fragment);
+                                lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Writing compiled primary fragment temp file: ${primaryTempPath}.`);
+                                external_node_fs_namespaceObject.writeFileSync(primaryTempPath, compiledPrimary, "utf8");
+                                if (hasSeparateCertbotFragment && generated.certbotFragment) {
+                                    const certbotTempPath = external_node_path_.join(tempDir, "certbot.cfg");
+                                    const compiledCertbot = compileFragment(generated.certbotFragment);
+                                    lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Writing compiled certbot fragment temp file: ${certbotTempPath}.`);
+                                    external_node_fs_namespaceObject.writeFileSync(certbotTempPath, compiledCertbot, "utf8");
+                                    lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Invoking deployHaproxyFragmentWithoutReload for compiled primary temp file ${primaryTempPath} as fragment "${fragmentName}".`);
+                                    haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyFragmentWithoutReload({
+                                        host: server.ip,
+                                        user: inputs.sshUser,
+                                        privateKey: inputs.sshPrivateKey,
+                                        fragmentPath: primaryTempPath,
+                                        fragmentName,
+                                        ipv6Only: effectiveIpv6Only,
+                                    }));
+                                    lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Invoking deployHaproxyFragment for compiled certbot temp file ${certbotTempPath} as fragment "${CERTBOT_FRAGMENT_NAME}".`);
+                                    haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyFragment({
+                                        host: server.ip,
+                                        user: inputs.sshUser,
+                                        privateKey: inputs.sshPrivateKey,
+                                        fragmentPath: certbotTempPath,
+                                        fragmentName: CERTBOT_FRAGMENT_NAME,
+                                        ipv6Only: effectiveIpv6Only,
+                                    }));
+                                }
+                                else {
+                                    lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Invoking deployHaproxyFragment for compiled primary temp file ${primaryTempPath} as fragment "${fragmentName}".`);
+                                    haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyFragment({
+                                        host: server.ip,
+                                        user: inputs.sshUser,
+                                        privateKey: inputs.sshPrivateKey,
+                                        fragmentPath: primaryTempPath,
+                                        fragmentName,
+                                        ipv6Only: effectiveIpv6Only,
+                                    }));
+                                }
+                            }
+                            finally {
+                                if (tempDir) {
+                                    lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Cleaning up compiled fragment temp directory: ${tempDir}.`);
+                                    external_node_fs_namespaceObject.rmSync(tempDir, { recursive: true, force: true });
+                                    lib_core.info(`${HAPROXY_SIMPLIFIED_LOG_PREFIX} Temp directory cleanup complete: ${tempDir}.`);
+                                }
+                            }
                         }
                         if (inputs.haproxyFragment) {
                             if (!inputs.haproxyFragmentName) {
@@ -46452,7 +46992,7 @@ async function deployPipeline(inputs) {
                                 }));
                             }
                         }
-                        if (inputs.certbot) {
+                        if (inputs.certbot && !useSimplifiedHaproxyFlow) {
                             lib_core.info(`HAProxy certbot flow enabled; deploying bundled certbot fragment with final haproxy-frag reload using certbot_port=${certbotPort}.`);
                             haproxyResult = mergeHaproxyResult(haproxyResult, await deployHaproxyCertbotFragment({
                                 host: server.ip,
