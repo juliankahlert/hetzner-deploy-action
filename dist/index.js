@@ -46673,6 +46673,27 @@ const rules = [
         optional: true,
     },
     {
+        field: "hostPort",
+        label: "host_port",
+        pattern: /^\d{1,5}$/,
+        hint: 'Must be a port like "443".',
+        optional: true,
+    },
+    {
+        field: "route",
+        label: "route",
+        pattern: /^(?:\*|\/\*|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$/,
+        hint: 'Must be a simplified HAProxy route like "/*", "example.com", or "https://example.com/api{,/**}".',
+        optional: true,
+    },
+    {
+        field: "appPort",
+        label: "app_port",
+        pattern: /^\d{1,5}$/,
+        hint: 'Must be a port like "8080".',
+        optional: true,
+    },
+    {
         field: "firewallEnabled",
         label: "firewall_enabled",
         pattern: /^(true|false)$/,
@@ -46710,6 +46731,22 @@ function validateInputs(inputs) {
         if (certbotPort < 1 || certbotPort > 65535) {
             throw new Error(`INPUT_VALIDATION_ Invalid value for "certbot_port": ${JSON.stringify(inputs.certbotPort)}. Must be an integer between 1 and 65535 when "certbot" is true.`);
         }
+    }
+    if (inputs.hostPort) {
+        const hostPort = Number(inputs.hostPort);
+        if (hostPort < 1 || hostPort > 65535) {
+            throw new Error(`INPUT_VALIDATION_ Invalid value for "host_port": ${JSON.stringify(inputs.hostPort)}. Must be an integer between 1 and 65535 when provided.`);
+        }
+    }
+    if (inputs.appPort) {
+        const appPort = Number(inputs.appPort);
+        if (appPort < 1 || appPort > 65535) {
+            throw new Error(`INPUT_VALIDATION_ Invalid value for "app_port": ${JSON.stringify(inputs.appPort)}. Must be an integer between 1 and 65535 when provided.`);
+        }
+    }
+    const simplifiedHaproxyInputsActive = Boolean(inputs.appPort);
+    if (simplifiedHaproxyInputsActive && inputs.haproxyFragment) {
+        throw new Error('INPUT_VALIDATION_ Invalid HAProxy input combination: "app_port" activates simplified HAProxy inputs and cannot be combined with "haproxy_fragment".');
     }
     if (inputs.serviceName && !inputs.containerImage && !inputs.execStart) {
         lib_core.warning('Input "service_name" was provided without "container_image" or "exec_start". Systemd will fall back to a placeholder ExecStart until you provide a real command source.');
@@ -46802,6 +46839,9 @@ function parseInputs() {
     const serviceYaml = lib_core.getInput("service");
     const certbot = lib_core.getInput("certbot");
     const certbotPort = lib_core.getInput("certbot_port");
+    const hostPort = lib_core.getInput("host_port");
+    const route = lib_core.getInput("route");
+    const appPort = lib_core.getInput("app_port");
     const parsedService = parseServiceInput(serviceYaml);
     validateServiceConfig(parsedService);
     const validatedServiceName = parsedService?.name ?? flatServiceName;
@@ -46826,6 +46866,9 @@ function parseInputs() {
         containerImage: lib_core.getInput("container_image"),
         containerPort: lib_core.getInput("container_port"),
         certbotPort,
+        hostPort,
+        route,
+        appPort,
         haproxyCfg: lib_core.getInput("haproxy_cfg"),
         haproxyFragment: lib_core.getInput("haproxy_fragment"),
         haproxyFragmentName: lib_core.getInput("haproxy_fragment_name"),
@@ -46861,6 +46904,9 @@ function parseInputs() {
         containerImage: raw.containerImage || undefined,
         containerPort: raw.containerPort || undefined,
         certbotPort: raw.certbotPort || undefined,
+        hostPort: raw.hostPort || undefined,
+        route: raw.route || undefined,
+        appPort: raw.appPort || undefined,
         haproxyCfg: raw.haproxyCfg || undefined,
         haproxyFragment: raw.haproxyFragment || undefined,
         haproxyFragmentName: raw.haproxyFragmentName || undefined,
@@ -46899,6 +46945,9 @@ function logInputs(inputs) {
     lib_core.info(`  ssh_private_key: ${inputs.sshPrivateKey ? "(provided)" : "(not set)"}`);
     lib_core.info(`  container_image: ${inputs.containerImage ?? "(not set)"}`);
     lib_core.info(`  container_port: ${inputs.containerPort ?? "(not set)"}`);
+    lib_core.info(`  host_port:     ${inputs.hostPort ?? "(not set)"}`);
+    lib_core.info(`  route:         ${inputs.route ?? "(not set)"}`);
+    lib_core.info(`  app_port:      ${inputs.appPort ?? "(not set)"}`);
     lib_core.info(`  haproxy_cfg:     ${inputs.haproxyCfg ?? "(not set)"}`);
     lib_core.info(`  haproxy_fragment: ${inputs.haproxyFragment ?? "(not set)"}`);
     lib_core.info(`  haproxy_fragment_name: ${inputs.haproxyFragmentName ?? "(not set)"}`);
