@@ -46135,7 +46135,7 @@ const GLOB_SUFFIX = "{,/**}";
  *   1. Strip scheme (`http://`, `https://`)
  *   2. Lowercase host portion only (path case is preserved)
  *   3. Trim trailing slashes (unless path is exactly `/`)
- *   4. Detect host-only vs host+path
+ *   4. Detect host-only vs host+path vs path-only
  *   5. Handle glob `{,/**}` → path-prefix semantics
  *   6. Default `/*` or empty → catch-all
  */
@@ -46173,6 +46173,15 @@ function normalizeRoute(raw) {
     }
     // Trim trailing slashes (unless path is exactly "/")
     const pathResult = rawPath.replace(/\/+$/, "") || "/";
+    // Path-only simplified route (`/hello`, `/hello{,/**}`, `/`) → no host ACL
+    if (host === "") {
+        return {
+            kind: "path-only",
+            host: undefined,
+            path: pathResult,
+            isPathPrefix,
+        };
+    }
     // Path reduced to just "/" → treat as host-only (no meaningful path)
     if (pathResult === "/") {
         return { kind: "host-only", host, path: undefined, isPathPrefix: false };
@@ -46316,12 +46325,15 @@ function buildUseBackendRuleTemplate(route) {
     if (route.kind === "host-only") {
         return `${backendName} if ${hostAclName}`;
     }
-    if (route.kind !== "host-path" || !route.path) {
+    if ((route.kind !== "host-path" && route.kind !== "path-only") || !route.path) {
         throw createGenerationError("cannot build backend rule template for non-routable path state");
     }
     const pathCondition = route.isPathPrefix
         ? `{ path_beg -i ${route.path} }`
         : `{ path -i ${route.path} }`;
+    if (route.kind === "path-only") {
+        return `${backendName} if ${pathCondition}`;
+    }
     return `${backendName} if ${hostAclName} ${pathCondition}`;
 }
 function summarizeValidationErrors(fragment) {
@@ -46426,6 +46438,10 @@ function generateFragment(inputs) {
         case "host-only":
         case "host-path": {
             frontendEntry.acl.push(resolveServiceTokens(buildHostAclTemplate(route), inputs.serviceName));
+            frontendEntry.use_backend.push(resolveServiceTokens(buildUseBackendRuleTemplate(route), inputs.serviceName));
+            break;
+        }
+        case "path-only": {
             frontendEntry.use_backend.push(resolveServiceTokens(buildUseBackendRuleTemplate(route), inputs.serviceName));
             break;
         }
@@ -47222,8 +47238,8 @@ const rules = [
     {
         field: "route",
         label: "route",
-        pattern: /^(?:\*|\/\*|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$/,
-        hint: 'Must be a simplified HAProxy route like "/*", "example.com", or "https://example.com/api{,/**}".',
+        pattern: /^(?:\*|\/\*|\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$/,
+        hint: 'Must be a simplified HAProxy route like "/*", "/hello{,/**}", "example.com", or "https://example.com/api{,/**}".',
         optional: true,
     },
     {
