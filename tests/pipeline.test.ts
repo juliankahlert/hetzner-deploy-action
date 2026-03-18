@@ -14,8 +14,19 @@ vi.mock("node:fs", async () => {
   return {
     ...actual,
     existsSync: vi.fn(),
+    mkdtempSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    rmSync: vi.fn(),
   };
 });
+
+vi.mock("../src/deploy/haproxyGenerator.js", () => ({
+  generateFragment: vi.fn(),
+}));
+
+vi.mock("../src/deploy/haproxyCompiler.js", () => ({
+  compileFragment: vi.fn(),
+}));
 
 // Hetzner modules — mock at module boundary
 vi.mock("../src/hetzner/client.js", () => ({
@@ -74,7 +85,7 @@ vi.mock("../src/deploy/ssh.js", () => ({
 // ---------------------------------------------------------------------------
 
 import * as core from "@actions/core";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createClient } from "../src/hetzner/client.js";
 import { ensureSshKey } from "../src/hetzner/sshKeys.js";
 import { findOrCreateServer } from "../src/hetzner/findOrCreateServer.js";
@@ -105,6 +116,8 @@ import {
   STAGE_ORDER,
   type ActionInputs,
 } from "../src/pipeline";
+import { compileFragment } from "../src/deploy/haproxyCompiler.js";
+import { generateFragment } from "../src/deploy/haproxyGenerator.js";
 import { createDebianStrategy } from "../src/deploy/strategies/debian";
 
 vi.mock("../src/deploy/osDetect.js", () => ({
@@ -129,6 +142,37 @@ const FAKE_SSH_KEY = {
 };
 
 const DEBIAN_STRATEGY = createDebianStrategy();
+const GENERATED_PRIMARY_FRAGMENT = {
+  frontend: {
+    "443": {
+      bind: "*:443 ssl crt /etc/haproxy/certs/",
+      acl: [],
+      use_backend: [],
+      default_backend: "bk_myapp",
+    },
+  },
+  backend: {
+    bk_myapp: {
+      mode: "http",
+      server: ["myapp_1 127.0.0.1:8080 check"],
+    },
+  },
+};
+const GENERATED_CERTBOT_FRAGMENT = {
+  frontend: {
+    "80": {
+      bind: "*:80",
+      acl: ["acme_challenge path_beg /.well-known/acme-challenge/"],
+      use_backend: ["bk_certbot if acme_challenge"],
+    },
+  },
+  backend: {
+    bk_certbot: {
+      mode: "http",
+      server: ["certbot 127.0.0.1:8888 check"],
+    },
+  },
+};
 
 /** Minimal valid inputs with all optional features disabled. */
 const BASE_INPUTS: ActionInputs = {
@@ -205,6 +249,9 @@ beforeEach(() => {
 
   // Default Hetzner mocks — provisioning always succeeds
   vi.mocked(existsSync).mockReturnValue(true);
+  vi.mocked(mkdtempSync).mockReturnValue("/tmp/haproxy-simplified-test");
+  vi.mocked(writeFileSync).mockImplementation(() => undefined);
+  vi.mocked(rmSync).mockImplementation(() => undefined);
   vi.mocked(createClient).mockReturnValue({} as ReturnType<typeof createClient>);
   vi.mocked(ensureSshKey).mockResolvedValue(FAKE_SSH_KEY);
   vi.mocked(findOrCreateServer).mockResolvedValue(FAKE_SERVER);
@@ -240,6 +287,14 @@ beforeEach(() => {
     configUploaded: true,
     serviceReloaded: false,
   });
+  vi.mocked(generateFragment).mockReturnValue({
+    fragment: GENERATED_PRIMARY_FRAGMENT,
+    certbotFragment: undefined,
+  });
+  vi.mocked(compileFragment)
+    .mockReturnValueOnce("compiled-primary")
+    .mockReturnValueOnce("compiled-certbot")
+    .mockReturnValue("compiled-fragment");
   vi.mocked(ensureHaproxyFragService).mockResolvedValue(undefined);
   vi.mocked(configureFirewall).mockResolvedValue({
     firewallEnabled: true,
@@ -335,6 +390,18 @@ describe("activeStages", () => {
       withInputs({
         haproxyFragment: "/etc/haproxy/conf.d/app.cfg",
         haproxyFragmentName: "app",
+      }),
+    );
+
+    expect(stages).toContain(STAGES.haproxy);
+  });
+
+  it("includes haproxy when simplified inputs are present", () => {
+    const stages = activeStages(
+      withInputs({
+        hostPort: "443",
+        route: "https://Api.Example.COM/v2",
+        appPort: "3000",
       }),
     );
 
@@ -735,6 +802,183 @@ describe("deployPipeline — stage ordering", () => {
       ipv6Only: false,
     });
     expect(deployHaproxyFragment).not.toHaveBeenCalled();
+  });
+
+  it("runs simplified flow in order: ensure service, deploy base, generate, compile, deploy fragment", async () => {
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        hostPort: "443",
+        route: "https://Api.Example.COM/v2",
+        appPort: "3000",
+      }),
+    );
+
+    const ensureCall = vi.mocked(ensureHaproxyFragService).mock.invocationCallOrder[0];
+    const deployBaseCall = vi.mocked(deployHaproxyBase).mock.invocationCallOrder[0];
+    const generateCall = vi.mocked(generateFragment).mock.invocationCallOrder[0];
+    const compileCall = vi.mocked(compileFragment).mock.invocationCallOrder[0];
+    const writeCall = vi.mocked(writeFileSync).mock.invocationCallOrder[0];
+    const deployFragmentCall = vi.mocked(deployHaproxyFragment).mock.invocationCallOrder[0];
+
+    expect(ensureCall).toBeLessThan(deployBaseCall);
+    expect(deployBaseCall).toBeLessThan(generateCall);
+    expect(generateCall).toBeLessThan(compileCall);
+    expect(compileCall).toBeLessThan(writeCall);
+    expect(writeCall).toBeLessThan(deployFragmentCall);
+    expect(deployHaproxyFragment).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      fragmentPath: "/tmp/haproxy-simplified-test/primary.cfg",
+      fragmentName: "myapp",
+      ipv6Only: false,
+    });
+    expect(deployHaproxyFragmentWithoutReload).not.toHaveBeenCalled();
+    expect(deployHaproxyCertbotFragment).not.toHaveBeenCalled();
+  });
+
+  it("deploys bundled base config before simplified fragment deployment", async () => {
+    await deployPipeline(
+      withInputs({ serviceName: "myapp", route: "example.com", appPort: "3000" }),
+    );
+
+    expect(deployHaproxyBase).toHaveBeenCalledOnce();
+    expect(deployHaproxy).not.toHaveBeenCalled();
+    expect(deployHaproxyFragment).toHaveBeenCalledOnce();
+  });
+
+  it("uses merged simplified certbot path when generator returns no separate certbot fragment", async () => {
+    vi.mocked(generateFragment).mockReturnValueOnce({
+      fragment: GENERATED_PRIMARY_FRAGMENT,
+      certbotFragment: undefined,
+    });
+
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        hostPort: "80",
+        route: "www.my.server/hello{,/**}",
+        appPort: "4004",
+        certbot: true,
+        certbotPort: "8888",
+      }),
+    );
+
+    expect(generateFragment).toHaveBeenCalledWith({
+      serviceName: "myapp",
+      bindPort: 80,
+      backendAddress: "127.0.0.1",
+      backendPort: 4004,
+      domain: "www.my.server/hello{,/**}",
+      certbot: true,
+      certbotPort: 8888,
+      sslCertPath: undefined,
+    });
+    expect(deployHaproxyFragment).toHaveBeenCalledOnce();
+    expect(deployHaproxyFragmentWithoutReload).not.toHaveBeenCalled();
+    expect(deployHaproxyCertbotFragment).not.toHaveBeenCalled();
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("Local certbot merge decision: certbot merged into primary fragment"),
+    );
+  });
+
+  it("uses separate simplified certbot fragment path with deferred reload semantics", async () => {
+    vi.mocked(generateFragment).mockReturnValueOnce({
+      fragment: GENERATED_PRIMARY_FRAGMENT,
+      certbotFragment: GENERATED_CERTBOT_FRAGMENT,
+    });
+    vi.mocked(compileFragment)
+      .mockReset()
+      .mockReturnValueOnce("compiled-primary")
+      .mockReturnValueOnce("compiled-certbot");
+
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        hostPort: "443",
+        route: "example.com",
+        appPort: "3000",
+        certbot: true,
+        certbotPort: "8888",
+      }),
+    );
+
+    const deferredCall = vi.mocked(deployHaproxyFragmentWithoutReload).mock.invocationCallOrder[0];
+    const certbotCall = vi.mocked(deployHaproxyFragment).mock.invocationCallOrder[0];
+
+    expect(deployHaproxyFragmentWithoutReload).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      fragmentPath: "/tmp/haproxy-simplified-test/primary.cfg",
+      fragmentName: "myapp",
+      ipv6Only: false,
+    });
+    expect(deployHaproxyFragment).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      fragmentPath: "/tmp/haproxy-simplified-test/certbot.cfg",
+      fragmentName: "certbot",
+      ipv6Only: false,
+    });
+    expect(deferredCall).toBeLessThan(certbotCall);
+    expect(deployHaproxyCertbotFragment).not.toHaveBeenCalled();
+    expect(core.info).toHaveBeenCalledWith(
+      expect.stringContaining("Local certbot merge decision: compile separate certbot fragment"),
+    );
+  });
+
+  it("cleans up simplified temp files on success", async () => {
+    await deployPipeline(
+      withInputs({ serviceName: "myapp", hostPort: "443", route: "example.com", appPort: "3000" }),
+    );
+
+    expect(mkdtempSync).toHaveBeenCalledOnce();
+    expect(writeFileSync).toHaveBeenCalledWith(
+      "/tmp/haproxy-simplified-test/primary.cfg",
+      expect.any(String),
+      "utf8",
+    );
+    expect(rmSync).toHaveBeenCalledWith("/tmp/haproxy-simplified-test", {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it("cleans up simplified temp files when deploy helper fails", async () => {
+    vi.mocked(deployHaproxyFragment).mockRejectedValueOnce(new Error("compiled fragment rejected"));
+
+    await expect(
+      deployPipeline(
+        withInputs({ serviceName: "myapp", hostPort: "443", route: "example.com", appPort: "3000" }),
+      ),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: compiled fragment rejected$/);
+
+    expect(rmSync).toHaveBeenCalledWith("/tmp/haproxy-simplified-test", {
+      recursive: true,
+      force: true,
+    });
+  });
+
+  it("suppresses legacy certbot helper when simplified path already handled certbot", async () => {
+    vi.mocked(generateFragment).mockReturnValueOnce({
+      fragment: GENERATED_PRIMARY_FRAGMENT,
+      certbotFragment: GENERATED_CERTBOT_FRAGMENT,
+    });
+
+    await deployPipeline(
+      withInputs({
+        serviceName: "myapp",
+        hostPort: "443",
+        route: "example.com",
+        appPort: "3000",
+        certbot: true,
+      }),
+    );
+
+    expect(deployHaproxyCertbotFragment).not.toHaveBeenCalled();
   });
 
   it("short-circuits certbot helper when deferred fragment helper fails", async () => {

@@ -1,4 +1,7 @@
 import * as core from "@actions/core";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { createClient } from "./hetzner/client.js";
 import { ensureSshKey } from "./hetzner/sshKeys.js";
 import { findOrCreateServer } from "./hetzner/findOrCreateServer.js";
@@ -20,12 +23,21 @@ import {
   deployHaproxyFragmentWithoutReload,
   ensureHaproxyFragService,
 } from "./deploy/haproxy.js";
+import { compileFragment } from "./deploy/haproxyCompiler.js";
+import { generateFragment } from "./deploy/haproxyGenerator.js";
 import { configureFirewall } from "./deploy/firewall.js";
 import { waitForSsh, withKeyFile } from "./deploy/ssh.js";
 import type { OsStrategy } from "./deploy/osStrategy.js";
+import { normalizeRoute } from "./deploy/haproxyTypes.js";
 import type { ServiceConfig } from "./validate.js";
 
 const DEFAULT_CERTBOT_PORT = "8888";
+const DEFAULT_SIMPLIFIED_HOST_PORT = 443;
+const DEFAULT_SIMPLIFIED_ROUTE = "/*";
+const DEFAULT_SIMPLIFIED_FRAGMENT_NAME = "json-fragment";
+const DEFAULT_SIMPLIFIED_SSL_CERT_PATH = "/etc/haproxy/certs/";
+const CERTBOT_FRAGMENT_NAME = "certbot";
+const HAPROXY_SIMPLIFIED_LOG_PREFIX = "[HAPROXY_SIMPLIFIED]";
 
 /* ------------------------------------------------------------------ */
 /*  Stage labels (ordered)                                            */
@@ -121,6 +133,23 @@ function mergeHaproxyResult(
   };
 }
 
+function hasSimplifiedHaproxyInputs(inputs: ActionInputs): boolean {
+  return Boolean(inputs.hostPort || inputs.route || inputs.appPort);
+}
+
+function hasRawHaproxyInputs(inputs: ActionInputs): boolean {
+  return Boolean(inputs.haproxyCfg || inputs.haproxyFragment);
+}
+
+function resolveSimplifiedFragmentName(inputs: ActionInputs): string {
+  return (
+    inputs.service?.name ||
+    inputs.serviceName ||
+    inputs.haproxyFragmentName ||
+    DEFAULT_SIMPLIFIED_FRAGMENT_NAME
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Stage predicates                                                  */
 /* ------------------------------------------------------------------ */
@@ -138,7 +167,12 @@ export function activeStages(inputs: ActionInputs): StageName[] {
       case STAGES.systemd:
         return Boolean(inputs.service?.name) && !inputs.containerImage;
       case STAGES.haproxy:
-        return Boolean(inputs.haproxyCfg || inputs.haproxyFragment || inputs.certbot);
+        return Boolean(
+          inputs.haproxyCfg ||
+            inputs.haproxyFragment ||
+            inputs.certbot ||
+            hasSimplifiedHaproxyInputs(inputs),
+        );
       case STAGES.firewall:
         return Boolean(inputs.firewallEnabled);
     }
@@ -351,15 +385,24 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           break;
 
         case STAGES.haproxy:
-          if (!inputs.haproxyCfg && !inputs.haproxyFragment && !inputs.certbot) {
+          if (
+            !inputs.haproxyCfg &&
+            !inputs.haproxyFragment &&
+            !inputs.certbot &&
+            !hasSimplifiedHaproxyInputs(inputs)
+          ) {
             throw new Error(
-              "haproxy_cfg, haproxy_fragment, or certbot is required for haproxy deployment",
+              "haproxy_cfg, haproxy_fragment, certbot, or simplified HAProxy inputs are required for haproxy deployment",
             );
           }
 
           {
+            const simplifiedInputsPresent = hasSimplifiedHaproxyInputs(inputs);
+            const rawHaproxyInputsPresent = hasRawHaproxyInputs(inputs);
+            const useSimplifiedHaproxyFlow = simplifiedInputsPresent && !rawHaproxyInputsPresent;
             const shouldDeployBaseConfig =
-              !inputs.haproxyCfg && (Boolean(inputs.haproxyFragment) || inputs.certbot);
+              !inputs.haproxyCfg &&
+              (Boolean(inputs.haproxyFragment) || inputs.certbot || useSimplifiedHaproxyFlow);
             const certbotPort = inputs.certbotPort ?? DEFAULT_CERTBOT_PORT;
 
             await ensureHaproxyFragService({
@@ -395,6 +438,128 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
                   ipv6Only: effectiveIpv6Only,
                 }),
               );
+            }
+
+            if (useSimplifiedHaproxyFlow) {
+              core.info(
+                `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Simplified-input branch selected for HAProxy stage (raw file inputs not selected).`,
+              );
+
+              if (!inputs.appPort) {
+                throw new Error(
+                  "app_port is required for simplified HAProxy deployment when host_port or route is provided",
+                );
+              }
+
+              const bindPort = Number(inputs.hostPort ?? DEFAULT_SIMPLIFIED_HOST_PORT);
+              const backendPort = Number(inputs.appPort);
+              const routeInput = inputs.route ?? DEFAULT_SIMPLIFIED_ROUTE;
+              const normalizedRoute = normalizeRoute(routeInput);
+              const fragmentName = resolveSimplifiedFragmentName(inputs);
+              const serviceName = resolveSimplifiedFragmentName(inputs);
+
+              core.info(
+                `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Normalized route summary: kind=${normalizedRoute.kind}, host=${normalizedRoute.host ?? "(none)"}, path=${normalizedRoute.path ?? "(none)"}, prefix=${normalizedRoute.isPathPrefix ? "yes" : "no"}.`,
+              );
+
+              const generated = generateFragment({
+                serviceName,
+                bindPort,
+                backendAddress: "127.0.0.1",
+                backendPort,
+                domain: routeInput,
+                certbot: inputs.certbot,
+                certbotPort: Number(certbotPort),
+                sslCertPath:
+                  bindPort === 443 ? DEFAULT_SIMPLIFIED_SSL_CERT_PATH : undefined,
+              });
+
+              const hasSeparateCertbotFragment = Boolean(generated.certbotFragment);
+              core.info(
+                `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Local certbot merge decision: ${inputs.certbot ? (hasSeparateCertbotFragment ? "compile separate certbot fragment" : "certbot merged into primary fragment") : "certbot disabled; primary fragment only"}.`,
+              );
+
+              let tempDir: string | undefined;
+
+              try {
+                tempDir = fs.mkdtempSync(
+                  path.join(os.tmpdir(), "haproxy-simplified-"),
+                );
+                core.info(
+                  `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Created temp directory for compiled fragments: ${tempDir}.`,
+                );
+
+                const primaryTempPath = path.join(tempDir, "primary.cfg");
+                const compiledPrimary = compileFragment(generated.fragment);
+                core.info(
+                  `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Writing compiled primary fragment temp file: ${primaryTempPath}.`,
+                );
+                fs.writeFileSync(primaryTempPath, compiledPrimary, "utf8");
+
+                if (hasSeparateCertbotFragment && generated.certbotFragment) {
+                  const certbotTempPath = path.join(tempDir, "certbot.cfg");
+                  const compiledCertbot = compileFragment(generated.certbotFragment);
+                  core.info(
+                    `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Writing compiled certbot fragment temp file: ${certbotTempPath}.`,
+                  );
+                  fs.writeFileSync(certbotTempPath, compiledCertbot, "utf8");
+
+                  core.info(
+                    `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Invoking deployHaproxyFragmentWithoutReload for compiled primary temp file ${primaryTempPath} as fragment "${fragmentName}".`,
+                  );
+                  haproxyResult = mergeHaproxyResult(
+                    haproxyResult,
+                    await deployHaproxyFragmentWithoutReload({
+                      host: server.ip,
+                      user: inputs.sshUser,
+                      privateKey: inputs.sshPrivateKey,
+                      fragmentPath: primaryTempPath,
+                      fragmentName,
+                      ipv6Only: effectiveIpv6Only,
+                    }),
+                  );
+
+                  core.info(
+                    `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Invoking deployHaproxyFragment for compiled certbot temp file ${certbotTempPath} as fragment "${CERTBOT_FRAGMENT_NAME}".`,
+                  );
+                  haproxyResult = mergeHaproxyResult(
+                    haproxyResult,
+                    await deployHaproxyFragment({
+                      host: server.ip,
+                      user: inputs.sshUser,
+                      privateKey: inputs.sshPrivateKey,
+                      fragmentPath: certbotTempPath,
+                      fragmentName: CERTBOT_FRAGMENT_NAME,
+                      ipv6Only: effectiveIpv6Only,
+                    }),
+                  );
+                } else {
+                  core.info(
+                    `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Invoking deployHaproxyFragment for compiled primary temp file ${primaryTempPath} as fragment "${fragmentName}".`,
+                  );
+                  haproxyResult = mergeHaproxyResult(
+                    haproxyResult,
+                    await deployHaproxyFragment({
+                      host: server.ip,
+                      user: inputs.sshUser,
+                      privateKey: inputs.sshPrivateKey,
+                      fragmentPath: primaryTempPath,
+                      fragmentName,
+                      ipv6Only: effectiveIpv6Only,
+                    }),
+                  );
+                }
+              } finally {
+                if (tempDir) {
+                  core.info(
+                    `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Cleaning up compiled fragment temp directory: ${tempDir}.`,
+                  );
+                  fs.rmSync(tempDir, { recursive: true, force: true });
+                  core.info(
+                    `${HAPROXY_SIMPLIFIED_LOG_PREFIX} Temp directory cleanup complete: ${tempDir}.`,
+                  );
+                }
+              }
             }
 
             if (inputs.haproxyFragment) {
@@ -434,7 +599,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
               }
             }
 
-            if (inputs.certbot) {
+            if (inputs.certbot && !useSimplifiedHaproxyFlow) {
               core.info(
                 `HAProxy certbot flow enabled; deploying bundled certbot fragment with final haproxy-frag reload using certbot_port=${certbotPort}.`,
               );
