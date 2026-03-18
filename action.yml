@@ -83,6 +83,17 @@ inputs:
   haproxy_cfg:
     description: "Path to HAProxy config \u2014 enables the haproxy stage when set"
     required: false
+  host_port:
+    description: 'Host port for HAProxy routing (default: 443)'
+    required: false
+    default: '443'
+  route:
+    description: 'Route pattern for HAProxy routing (default: /*)'
+    required: false
+    default: '/*'
+  app_port:
+    description: Application port for HAProxy routing
+    required: false
   certbot:
     description: "String boolean to enable certbot ACME support"
     required: false

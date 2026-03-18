@@ -89,6 +89,12 @@ export interface ActionInputs {
   haproxyFragment?: string;
   /** HAProxy fragment name written on the remote host. */
   haproxyFragmentName?: string;
+  /** Simplified HAProxy host port input. */
+  hostPort?: string;
+  /** Simplified HAProxy route input. */
+  route?: string;
+  /** Simplified HAProxy app port input. */
+  appPort?: string;
   /** Enables the firewall stage when true. */
   firewallEnabled?: boolean;
   /** Additional firewall ports to allow. */

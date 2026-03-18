@@ -61,6 +61,9 @@ export interface ValidatableInputs {
   haproxyCfg: string;
   haproxyFragment: string;
   haproxyFragmentName: string;
+  hostPort: string;
+  route: string;
+  appPort: string;
   firewallEnabled: string;
   firewallExtraPorts: string;
 }
@@ -214,6 +217,28 @@ const rules: ValidationRule[] = [
     optional: true,
   },
   {
+    field: "hostPort",
+    label: "host_port",
+    pattern: /^\d{1,5}$/,
+    hint: 'Must be a port like "443".',
+    optional: true,
+  },
+  {
+    field: "route",
+    label: "route",
+    pattern: /^(?:\*|\/\*|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$/,
+    hint:
+      'Must be a simplified HAProxy route like "/*", "example.com", or "https://example.com/api{,/**}".',
+    optional: true,
+  },
+  {
+    field: "appPort",
+    label: "app_port",
+    pattern: /^\d{1,5}$/,
+    hint: 'Must be a port like "8080".',
+    optional: true,
+  },
+  {
     field: "firewallEnabled",
     label: "firewall_enabled",
     pattern: /^(true|false)$/,
@@ -261,6 +286,34 @@ export function validateInputs(inputs: ValidatableInputs): void {
         `INPUT_VALIDATION_ Invalid value for "certbot_port": ${JSON.stringify(inputs.certbotPort)}. Must be an integer between 1 and 65535 when "certbot" is true.`,
       );
     }
+  }
+
+  if (inputs.hostPort) {
+    const hostPort = Number(inputs.hostPort);
+
+    if (hostPort < 1 || hostPort > 65535) {
+      throw new Error(
+        `INPUT_VALIDATION_ Invalid value for "host_port": ${JSON.stringify(inputs.hostPort)}. Must be an integer between 1 and 65535 when provided.`,
+      );
+    }
+  }
+
+  if (inputs.appPort) {
+    const appPort = Number(inputs.appPort);
+
+    if (appPort < 1 || appPort > 65535) {
+      throw new Error(
+        `INPUT_VALIDATION_ Invalid value for "app_port": ${JSON.stringify(inputs.appPort)}. Must be an integer between 1 and 65535 when provided.`,
+      );
+    }
+  }
+
+  const simplifiedHaproxyInputsActive = Boolean(inputs.appPort);
+
+  if (simplifiedHaproxyInputsActive && inputs.haproxyFragment) {
+    throw new Error(
+      'INPUT_VALIDATION_ Invalid HAProxy input combination: "app_port" activates simplified HAProxy inputs and cannot be combined with "haproxy_fragment".',
+    );
   }
 
   if (inputs.serviceName && !inputs.containerImage && !inputs.execStart) {

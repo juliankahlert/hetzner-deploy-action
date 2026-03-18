@@ -100,6 +100,9 @@ function parseInputs(): ActionInputs {
   const serviceYaml = core.getInput("service");
   const certbot = core.getInput("certbot");
   const certbotPort = core.getInput("certbot_port");
+  const hostPort = core.getInput("host_port");
+  const route = core.getInput("route");
+  const appPort = core.getInput("app_port");
 
   const parsedService = parseServiceInput(serviceYaml);
   validateServiceConfig(parsedService);
@@ -130,6 +133,9 @@ function parseInputs(): ActionInputs {
     containerImage: core.getInput("container_image"),
     containerPort: core.getInput("container_port"),
     certbotPort,
+    hostPort,
+    route,
+    appPort,
     haproxyCfg: core.getInput("haproxy_cfg"),
     haproxyFragment: core.getInput("haproxy_fragment"),
     haproxyFragmentName: core.getInput("haproxy_fragment_name"),
@@ -168,6 +174,9 @@ function parseInputs(): ActionInputs {
     containerImage: raw.containerImage || undefined,
     containerPort: raw.containerPort || undefined,
     certbotPort: raw.certbotPort || undefined,
+    hostPort: raw.hostPort || undefined,
+    route: raw.route || undefined,
+    appPort: raw.appPort || undefined,
     haproxyCfg: raw.haproxyCfg || undefined,
     haproxyFragment: raw.haproxyFragment || undefined,
     haproxyFragmentName: raw.haproxyFragmentName || undefined,
@@ -212,6 +221,9 @@ function logInputs(inputs: ActionInputs): void {
     `  container_image: ${inputs.containerImage ?? "(not set)"}`,
   );
   core.info(`  container_port: ${inputs.containerPort ?? "(not set)"}`);
+  core.info(`  host_port:     ${inputs.hostPort ?? "(not set)"}`);
+  core.info(`  route:         ${inputs.route ?? "(not set)"}`);
+  core.info(`  app_port:      ${inputs.appPort ?? "(not set)"}`);
   core.info(
     `  haproxy_cfg:     ${inputs.haproxyCfg ?? "(not set)"}`,
   );

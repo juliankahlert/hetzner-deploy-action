@@ -81,6 +81,7 @@ beforeEach(() => {
 describe("src/index entrypoint", () => {
   it("passes fully configured inputs through to the pipeline", async () => {
     mockInputs({
+      app_port: "3000",
       certbot: "true",
       certbot_port: "8081",
       container_image: "ghcr.io/acme/app:1.2.3",
@@ -91,8 +92,10 @@ describe("src/index entrypoint", () => {
       haproxy_cfg: "/etc/haproxy/haproxy.cfg",
       haproxy_fragment: "frontend app",
       haproxy_fragment_name: "app",
+      host_port: "443",
       image: "ubuntu-24.04",
       ipv6_only: "true",
+      route: "/app",
       server_type: "cx22",
       service_name: "demo.service",
       service_restart: "always",
@@ -108,6 +111,7 @@ describe("src/index entrypoint", () => {
     expect(mocks.validateServiceConfig).toHaveBeenCalledWith(undefined);
     expect(mocks.validateServiceConfig).toHaveBeenCalledTimes(1);
     expect(mocks.validateInputs).toHaveBeenCalledWith({
+      appPort: "3000",
       certbot: "true",
       certbotPort: "8081",
       containerPort: "8080:80",
@@ -118,9 +122,11 @@ describe("src/index entrypoint", () => {
       haproxyCfg: "/etc/haproxy/haproxy.cfg",
       haproxyFragment: "frontend app",
       haproxyFragmentName: "app",
+      hostPort: "443",
       image: "ubuntu-24.04",
       ipv6Only: "true",
       projectTag: "demo-project",
+      route: "/app",
       serverName: "demo-server",
       serverType: "cx22",
       serviceName: "demo.service",
@@ -133,6 +139,7 @@ describe("src/index entrypoint", () => {
     });
     expect(mocks.validateInputs).toHaveBeenCalledTimes(1);
     expect(mocks.deployPipeline).toHaveBeenCalledWith({
+      appPort: "3000",
       certbot: true,
       certbotPort: "8081",
       containerImage: "ghcr.io/acme/app:1.2.3",
@@ -144,10 +151,12 @@ describe("src/index entrypoint", () => {
       haproxyFragment: "frontend app",
       haproxyFragmentName: "app",
       hcloudToken: "token-123",
+      hostPort: "443",
       image: "ubuntu-24.04",
       ipv6Only: true,
       projectTag: "demo-project",
       publicKey: "ssh-ed25519 AAAATEST",
+      route: "/app",
       serverName: "demo-server",
       serverType: "cx22",
       service: {
@@ -174,6 +183,9 @@ describe("src/index entrypoint", () => {
     expect(logs).toContain("  ipv6_only:    true");
     expect(logs).toContain("  certbot:      true");
     expect(logs).toContain("  certbot_port: 8081");
+    expect(logs).toContain("  host_port:     443");
+    expect(logs).toContain("  route:         /app");
+    expect(logs).toContain("  app_port:      3000");
     expect(logs).toContain("  service:      (provided)");
     expect(logs).toContain("  service_name: (provided)");
     expect(logs).toContain("  exec_start:   (provided)");
@@ -187,6 +199,7 @@ describe("src/index entrypoint", () => {
 
     expect(mocks.validateServiceConfig).toHaveBeenCalledWith(undefined);
     expect(mocks.validateInputs).toHaveBeenCalledWith({
+      appPort: "",
       certbot: "",
       certbotPort: "",
       containerImage: "",
@@ -196,9 +209,11 @@ describe("src/index entrypoint", () => {
       haproxyCfg: "",
       haproxyFragment: "",
       haproxyFragmentName: "",
+      hostPort: "",
       image: "",
       ipv6Only: "",
       projectTag: "demo-project",
+      route: "",
       serverName: "demo-server",
       serverType: "",
       serviceName: "",
@@ -210,6 +225,7 @@ describe("src/index entrypoint", () => {
       targetDir: "",
     });
     expect(mocks.deployPipeline).toHaveBeenCalledWith({
+      appPort: undefined,
       certbot: false,
       certbotPort: undefined,
       containerImage: undefined,
@@ -221,10 +237,12 @@ describe("src/index entrypoint", () => {
       haproxyFragment: undefined,
       haproxyFragmentName: undefined,
       hcloudToken: "token-123",
+      hostPort: undefined,
       image: "",
       ipv6Only: false,
       projectTag: "demo-project",
       publicKey: "ssh-ed25519 AAAATEST",
+      route: undefined,
       serverName: "demo-server",
       serverType: "",
       service: undefined,
@@ -242,6 +260,9 @@ describe("src/index entrypoint", () => {
     expect(logs).toContain("  service_name: (not set)");
     expect(logs).toContain("  container_image: (not set)");
     expect(logs).toContain("  container_port: (not set)");
+    expect(logs).toContain("  host_port:     (not set)");
+    expect(logs).toContain("  route:         (not set)");
+    expect(logs).toContain("  app_port:      (not set)");
     expect(logs).toContain("  haproxy_cfg:     (not set)");
     expect(logs).toContain("  haproxy_fragment: (not set)");
     expect(logs).toContain("  haproxy_fragment_name: (not set)");

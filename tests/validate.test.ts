@@ -34,6 +34,9 @@ const validInputs: ValidatableInputs = {
   haproxyCfg: "",
   haproxyFragment: "",
   haproxyFragmentName: "",
+  hostPort: "",
+  route: "",
+  appPort: "",
   firewallEnabled: "",
   firewallExtraPorts: "",
 };
@@ -723,6 +726,73 @@ describe("validateInputs — haproxyFragmentName (optional)", () => {
     expect(() =>
       validateInputs(withOverride({ haproxyFragmentName: name })),
     ).toThrow(/INPUT_VALIDATION_/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// simplified HAProxy inputs (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — simplified HAProxy inputs (optional)", () => {
+  it("accepts a valid simplified HAProxy trio", () => {
+    expect(() =>
+      validateInputs(
+        withOverride({
+          hostPort: "443",
+          route: "https://example.com/api{,/**}",
+          appPort: "8080",
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects invalid host_port formats", () => {
+    expect(() =>
+      validateInputs(withOverride({ hostPort: "80:443" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects invalid app_port formats", () => {
+    expect(() =>
+      validateInputs(withOverride({ appPort: "abc" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects out-of-range host_port values", () => {
+    expect(() =>
+      validateInputs(withOverride({ hostPort: "65536" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects out-of-range app_port values", () => {
+    expect(() =>
+      validateInputs(withOverride({ appPort: "0" })),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("rejects haproxy_fragment when simplified mode is active", () => {
+    expect(() =>
+      validateInputs(
+        withOverride({
+          hostPort: "443",
+          route: "/*",
+          appPort: "8080",
+          haproxyFragment: "haproxy/fragments/app.cfg",
+        }),
+      ),
+    ).toThrow(/INPUT_VALIDATION_/);
+  });
+
+  it("keeps route and host_port inert until app_port activates simplified mode", () => {
+    expect(() =>
+      validateInputs(
+        withOverride({
+          hostPort: "443",
+          route: "/*",
+          appPort: "",
+          haproxyFragment: "haproxy/fragments/app.cfg",
+        }),
+      ),
+    ).not.toThrow();
   });
 });
 
