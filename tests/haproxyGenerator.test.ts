@@ -82,6 +82,37 @@ describe("generateFragment", () => {
     });
   });
 
+  it("generates a path-only prefix route without a host ACL", () => {
+    const { fragment } = generateFragment(createInputs({ domain: "/hello{,/**}" }));
+
+    expect(fragment.frontend["443"]).toMatchObject({
+      bind: "*:443",
+      acl: [],
+      use_backend: ["bk_myapp if { path_beg -i /hello }"],
+    });
+    expect(fragment.frontend["443"].use_backend).toHaveLength(1);
+    expect(fragment.frontend["443"].default_backend).toBeUndefined();
+    expect(fragment.backend).toEqual({
+      bk_myapp: {
+        mode: "http",
+        server: ["myapp_1 127.0.0.1:3000 check"],
+      },
+    });
+  });
+
+  it("generates an exact path-only route with an exact path matcher", () => {
+    const { fragment } = generateFragment(createInputs({ domain: "/health" }));
+
+    expect(fragment.frontend["443"]).toMatchObject({
+      bind: "*:443",
+      acl: [],
+      use_backend: ["bk_myapp if { path -i /health }"],
+    });
+    expect(fragment.frontend["443"].use_backend).toHaveLength(1);
+    expect(fragment.frontend["443"].use_backend[0]).not.toContain("path_beg");
+    expect(fragment.frontend["443"].default_backend).toBeUndefined();
+  });
+
   it("produces a primary fragment that passes validation", () => {
     const { fragment } = generateFragment(createInputs({ domain: "api.example.com/v1" }));
 

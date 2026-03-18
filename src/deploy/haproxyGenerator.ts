@@ -42,13 +42,17 @@ function buildUseBackendRuleTemplate(route: NormalizedRoute): string {
     return `${backendName} if ${hostAclName}`;
   }
 
-  if (route.kind !== "host-path" || !route.path) {
+  if ((route.kind !== "host-path" && route.kind !== "path-only") || !route.path) {
     throw createGenerationError("cannot build backend rule template for non-routable path state");
   }
 
   const pathCondition = route.isPathPrefix
     ? `{ path_beg -i ${route.path} }`
     : `{ path -i ${route.path} }`;
+
+  if (route.kind === "path-only") {
+    return `${backendName} if ${pathCondition}`;
+  }
 
   return `${backendName} if ${hostAclName} ${pathCondition}`;
 }
@@ -178,6 +182,12 @@ export function generateFragment(inputs: GeneratorInputs): GeneratorResult {
     case "host-only":
     case "host-path": {
       frontendEntry.acl.push(resolveServiceTokens(buildHostAclTemplate(route), inputs.serviceName));
+      frontendEntry.use_backend.push(
+        resolveServiceTokens(buildUseBackendRuleTemplate(route), inputs.serviceName),
+      );
+      break;
+    }
+    case "path-only": {
       frontendEntry.use_backend.push(
         resolveServiceTokens(buildUseBackendRuleTemplate(route), inputs.serviceName),
       );

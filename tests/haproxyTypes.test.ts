@@ -210,6 +210,38 @@ describe("normalizeRoute", () => {
     });
   });
 
+  describe("path-only routes", () => {
+    it("detects slash-prefixed path without host", () => {
+      const result = normalizeRoute("/hello");
+      expect(result).toEqual<NormalizedRoute>({
+        kind: "path-only",
+        host: undefined,
+        path: "/hello",
+        isPathPrefix: false,
+      });
+    });
+
+    it("detects slash-prefixed glob path without host", () => {
+      const result = normalizeRoute("/hello{,/**}");
+      expect(result).toEqual<NormalizedRoute>({
+        kind: "path-only",
+        host: undefined,
+        path: "/hello",
+        isPathPrefix: true,
+      });
+    });
+
+    it("trims trailing slashes for path-only routes", () => {
+      const result = normalizeRoute("/hello/");
+      expect(result).toEqual<NormalizedRoute>({
+        kind: "path-only",
+        host: undefined,
+        path: "/hello",
+        isPathPrefix: false,
+      });
+    });
+  });
+
   describe("glob suffix handling", () => {
     it("detects glob suffix and sets isPathPrefix", () => {
       const result = normalizeRoute("example.com/hello{,/**}");

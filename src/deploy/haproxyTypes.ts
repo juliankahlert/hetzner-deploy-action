@@ -76,12 +76,12 @@ export interface LocalCompileOptions {
 /* ------------------------------------------------------------------ */
 
 /** Classification of a normalized route for ACL generation strategy. */
-export type RouteKind = "catch-all" | "host-only" | "host-path";
+export type RouteKind = "catch-all" | "host-only" | "host-path" | "path-only";
 
 /**
  * Structured result of route normalization.
  *
- * All fields are always present (not optional) — the generator can
+ * All fields are always present (not optional) — callers can
  * destructure without guarding for property existence, using `kind`
  * as the sole branching discriminant.
  */
@@ -90,12 +90,12 @@ export interface NormalizedRoute {
   kind: RouteKind;
   /** Lowercase hostname. Present when kind is `"host-only"` or `"host-path"`. */
   host: string | undefined;
-  /** Path component (no trailing slash). Present when kind is `"host-path"`. */
+  /** Path component (no trailing slash). Present when kind is `"host-path"` or `"path-only"`. */
   path: string | undefined;
   /**
    * `true` when the path uses prefix-match semantics (derived from
    * glob `{,/**}` in the original route).  Only meaningful when kind
-   * is `"host-path"`.
+   * is `"host-path"` or `"path-only"`.
    */
   isPathPrefix: boolean;
 }
@@ -163,7 +163,7 @@ const GLOB_SUFFIX = "{,/**}";
  *   1. Strip scheme (`http://`, `https://`)
  *   2. Lowercase host portion only (path case is preserved)
  *   3. Trim trailing slashes (unless path is exactly `/`)
- *   4. Detect host-only vs host+path
+ *   4. Detect host-only vs host+path vs path-only
  *   5. Handle glob `{,/**}` → path-prefix semantics
  *   6. Default `/*` or empty → catch-all
  */
@@ -208,6 +208,16 @@ export function normalizeRoute(raw: string): NormalizedRoute {
 
   // Trim trailing slashes (unless path is exactly "/")
   const pathResult = rawPath.replace(/\/+$/, "") || "/";
+
+  // Path-only simplified route (`/hello`, `/hello{,/**}`, `/`) → no host ACL
+  if (host === "") {
+    return {
+      kind: "path-only",
+      host: undefined,
+      path: pathResult,
+      isPathPrefix,
+    };
+  }
 
   // Path reduced to just "/" → treat as host-only (no meaningful path)
   if (pathResult === "/") {
