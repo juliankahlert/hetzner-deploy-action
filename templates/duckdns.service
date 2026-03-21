@@ -1,0 +1,8 @@
+[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=duckdns
+ExecStart=/usr/bin/python3 /etc/duckdns/update.py
