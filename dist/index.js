@@ -46710,11 +46710,13 @@ async function deployDuckdns(opts) {
     lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 3/6 complete.`);
     lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 4/6: uploading updater script.`);
     try {
-        await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, [
-            heredocTeeCommand(DUCKDNS_SCRIPT_PATH, renderScript(DUCKDNS_CONFIG_PATH), "DUCKDNS_SCRIPT_EOF"),
-            `sudo chmod 0755 ${shellQuote(DUCKDNS_SCRIPT_PATH)}`,
-            `sudo chown ${shellQuote(DUCKDNS_SERVICE_USER_NAME)}:${shellQuote(DUCKDNS_SERVICE_USER_NAME)} ${shellQuote(DUCKDNS_SCRIPT_PATH)}`,
-        ].join(" && "), ipv6Only));
+        await withKeyFile(privateKey, async (keyPath) => {
+            await sshExec(keyPath, user, host, heredocTeeCommand(DUCKDNS_SCRIPT_PATH, renderScript(DUCKDNS_CONFIG_PATH), "DUCKDNS_SCRIPT_EOF"), ipv6Only);
+            await sshExec(keyPath, user, host, [
+                `sudo chmod 0755 ${shellQuote(DUCKDNS_SCRIPT_PATH)}`,
+                `sudo chown ${shellQuote(DUCKDNS_SERVICE_USER_NAME)}:${shellQuote(DUCKDNS_SERVICE_USER_NAME)} ${shellQuote(DUCKDNS_SCRIPT_PATH)}`,
+            ].join(" && "), ipv6Only);
+        });
     }
     catch (error) {
         throw wrapDuckdnsError(DUCKDNS_SCRIPT, `failed to install updater script at ${DUCKDNS_SCRIPT_PATH}`, error);

@@ -119,6 +119,11 @@ function sshCallSlice(start: number, end?: number): string[] {
     .map((call) => call[3] as string);
 }
 
+function expectStandaloneHeredocTerminator(command: string, terminator: string): void {
+  expect(command).toMatch(new RegExp(`\\n${terminator}$`));
+  expect(command).not.toContain(`\n${terminator} && `);
+}
+
 function infoMessages(): string[] {
   return vi.mocked(core.info).mock.calls.map(([message]) => String(message));
 }
@@ -354,9 +359,9 @@ describe("deployDuckdns", () => {
       ipv6Only: false,
     });
 
-    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(8);
+    expect(vi.mocked(ssh.sshExec)).toHaveBeenCalledTimes(9);
 
-    const commands = sshCallSlice(0, 8);
+    const commands = sshCallSlice(0, 9);
 
     expect(commands[0]).toContain(
       "sudo tee '/etc/duckdns/config.yaml' > /dev/null << 'DUCKDNS_CONFIG_EOF'",
@@ -373,24 +378,26 @@ describe("deployDuckdns", () => {
       "sudo tee '/etc/duckdns/update.py' > /dev/null << 'DUCKDNS_SCRIPT_EOF'",
     );
     expect(commands[2]).toContain(renderScript(CONFIG_PATH));
-    expect(commands[2]).toContain("sudo chmod 0755 '/etc/duckdns/update.py'");
-    expect(commands[2]).toContain(
+    expectStandaloneHeredocTerminator(commands[2], "DUCKDNS_SCRIPT_EOF");
+
+    expect(commands[3]).toContain("sudo chmod 0755 '/etc/duckdns/update.py'");
+    expect(commands[3]).toContain(
       "sudo chown 'duckdns':'duckdns' '/etc/duckdns/update.py'",
     );
 
-    expect(commands[3]).toContain(
+    expect(commands[4]).toContain(
       "sudo tee '/etc/systemd/system/duckdns.service' > /dev/null << 'DUCKDNS_SERVICE_UNIT_EOF'",
     );
-    expect(commands[3]).toContain(renderServiceUnit());
+    expect(commands[4]).toContain(renderServiceUnit());
 
-    expect(commands[4]).toContain(
+    expect(commands[5]).toContain(
       "sudo tee '/etc/systemd/system/duckdns.timer' > /dev/null << 'DUCKDNS_TIMER_UNIT_EOF'",
     );
-    expect(commands[4]).toContain(renderTimerUnit());
+    expect(commands[5]).toContain(renderTimerUnit());
 
-    expect(commands[5]).toBe("sudo systemctl daemon-reload");
-    expect(commands[6]).toBe("sudo systemctl enable --now duckdns.timer");
-    expect(commands[7]).toBe("sudo systemctl start duckdns.service");
+    expect(commands[6]).toBe("sudo systemctl daemon-reload");
+    expect(commands[7]).toBe("sudo systemctl enable --now duckdns.timer");
+    expect(commands[8]).toBe("sudo systemctl start duckdns.service");
 
     expectLogsRedacted();
   });
@@ -413,8 +420,8 @@ describe("deployDuckdns", () => {
         expect.stringContaining("initial service run failed"),
       ]),
     );
-    expect(sshRemoteCmd(6)).toBe("sudo systemctl enable --now duckdns.timer");
-    expect(sshRemoteCmd(7)).toBe("sudo systemctl start duckdns.service");
+    expect(sshRemoteCmd(7)).toBe("sudo systemctl enable --now duckdns.timer");
+    expect(sshRemoteCmd(8)).toBe("sudo systemctl start duckdns.service");
 
     expectLogsRedacted();
   });
@@ -438,7 +445,9 @@ describe("deployDuckdns", () => {
       ]),
     );
     expect(sshRemoteCmd(2)).toContain("/etc/duckdns/update.py");
-    expect(sshRemoteCmd(6)).toBe("sudo systemctl enable --now duckdns.timer");
+    expectStandaloneHeredocTerminator(sshRemoteCmd(2), "DUCKDNS_SCRIPT_EOF");
+    expect(sshRemoteCmd(3)).toContain("sudo chmod 0755 '/etc/duckdns/update.py'");
+    expect(sshRemoteCmd(7)).toBe("sudo systemctl enable --now duckdns.timer");
 
     expectLogsRedacted();
   });
