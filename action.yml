@@ -26,6 +26,9 @@ inputs:
       runner with IPv6 support.'
     required: false
     default: 'false'
+  duckdns:
+    description: DuckDNS configuration in combined token:domain format
+    required: false
   public_key:
     description: SSH public key to register on the server
     required: true

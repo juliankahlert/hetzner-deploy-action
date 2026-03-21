@@ -66,6 +66,7 @@ export interface ValidatableInputs {
   appPort: string;
   firewallEnabled: string;
   firewallExtraPorts: string;
+  duckdns?: string;
 }
 
 interface ValidationRule {
@@ -79,6 +80,10 @@ interface ValidationRule {
 const SERVICE_USERNAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$/;
 const SERVICE_WORKING_DIRECTORY_PATTERN =
   /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$/;
+const DUCKDNS_TOKEN_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DUCKDNS_DOMAIN_LABEL_PATTERN =
+  /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const ROUTE_PATH_ONLY_PATTERN =
   String.raw`\/[a-zA-Z0-9][a-zA-Z0-9._:@-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._:@-]*)*(?:\{,\/\*\*\})?`;
 const ROUTE_PATTERN = new RegExp(
@@ -259,6 +264,10 @@ const rules: ValidationRule[] = [
   },
 ];
 
+function throwDuckdnsValidationError(hint: string): never {
+  throw new Error(`INPUT_VALIDATION_ Invalid value for "duckdns". ${hint}`);
+}
+
 /**
  * Validate user-supplied inputs against strict allowlists.
  * Throws immediately on the first violation so the action fails fast.
@@ -309,6 +318,36 @@ export function validateInputs(inputs: ValidatableInputs): void {
     if (appPort < 1 || appPort > 65535) {
       throw new Error(
         `INPUT_VALIDATION_ Invalid value for "app_port": ${JSON.stringify(inputs.appPort)}. Must be an integer between 1 and 65535 when provided.`,
+      );
+    }
+  }
+
+  if (inputs.duckdns) {
+    const duckdnsParts = inputs.duckdns.split(":");
+
+    if (duckdnsParts.length !== 2 || !duckdnsParts[0] || !duckdnsParts[1]) {
+      throwDuckdnsValidationError(
+        'Must use the combined format "token:domain" when provided.',
+      );
+    }
+
+    const [token, domain] = duckdnsParts;
+
+    if (!DUCKDNS_TOKEN_PATTERN.test(token)) {
+      throwDuckdnsValidationError(
+        'Token must be a lowercase UUID in the combined format "token:domain".',
+      );
+    }
+
+    if (domain.endsWith(".duckdns.org")) {
+      throwDuckdnsValidationError(
+        'Domain must be the DuckDNS subdomain label only, without the ".duckdns.org" suffix.',
+      );
+    }
+
+    if (!DUCKDNS_DOMAIN_LABEL_PATTERN.test(domain)) {
+      throwDuckdnsValidationError(
+        'Domain must be a valid lowercase DNS label using only letters, digits, and internal hyphens.',
       );
     }
   }

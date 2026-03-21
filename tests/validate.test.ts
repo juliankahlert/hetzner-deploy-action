@@ -39,6 +39,7 @@ const validInputs: ValidatableInputs = {
   appPort: "",
   firewallEnabled: "",
   firewallExtraPorts: "",
+  duckdns: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,83 @@ describe("validateInputs — happy path", () => {
     expect(() =>
       validateInputs(withOverride({ ipv6Only: "true" })),
     ).not.toThrow();
+  });
+
+  it("passes with duckdns omitted", () => {
+    expect(() =>
+      validateInputs(withOverride({ duckdns: undefined })),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// duckdns (optional)
+// ---------------------------------------------------------------------------
+describe("validateInputs — duckdns (optional)", () => {
+  it.each([
+    "123e4567-e89b-12d3-a456-426614174000:my-app",
+    "123e4567-e89b-12d3-a456-426614174000:app1",
+  ])("accepts a valid combined token:domain value like %s", (duckdns) => {
+    expect(() => validateInputs(withOverride({ duckdns }))).not.toThrow();
+  });
+
+  it.each(["", undefined])("accepts an empty or missing optional value: %s", (duckdns) => {
+    expect(() => validateInputs(withOverride({ duckdns }))).not.toThrow();
+  });
+
+  it.each([
+    "not-a-uuid:my-app",
+    "123E4567-E89B-12D3-A456-426614174000:my-app",
+  ])("rejects invalid token UUID format for %s", (duckdns) => {
+    expect(() =>
+      validateInputs(withOverride({ duckdns })),
+    ).toThrow(/^INPUT_VALIDATION_(?:DUCKDNS)?/);
+    expect(() =>
+      validateInputs(withOverride({ duckdns })),
+    ).toThrow(/duckdns/);
+  });
+
+  it.each([
+    "123e4567-e89b-12d3-a456-426614174000:-my-app",
+    "123e4567-e89b-12d3-a456-426614174000:my_app",
+  ])("rejects invalid domain labels for %s", (duckdns) => {
+    expect(() =>
+      validateInputs(withOverride({ duckdns })),
+    ).toThrow(/^INPUT_VALIDATION_(?:DUCKDNS)?/);
+    expect(() =>
+      validateInputs(withOverride({ duckdns })),
+    ).toThrow(/duckdns/);
+  });
+
+  it("rejects a .duckdns.org suffix", () => {
+    expect(() =>
+      validateInputs(
+        withOverride({
+          duckdns: "123e4567-e89b-12d3-a456-426614174000:my-app.duckdns.org",
+        }),
+      ),
+    ).toThrow(/^INPUT_VALIDATION_(?:DUCKDNS)?/);
+    expect(() =>
+      validateInputs(
+        withOverride({
+          duckdns: "123e4567-e89b-12d3-a456-426614174000:my-app.duckdns.org",
+        }),
+      ),
+    ).toThrow(/\.duckdns\.org/);
+  });
+
+  it.each([
+    "123e4567-e89b-12d3-a456-426614174000",
+    "123e4567-e89b-12d3-a456-426614174000-my-app",
+    ":my-app",
+    "123e4567-e89b-12d3-a456-426614174000:",
+  ])("rejects malformed combined values like %s", (duckdns) => {
+    expect(() =>
+      validateInputs(withOverride({ duckdns })),
+    ).toThrow(/^INPUT_VALIDATION_(?:DUCKDNS)?/);
+    expect(() =>
+      validateInputs(withOverride({ duckdns })),
+    ).toThrow(/"token:domain"/);
   });
 });
 

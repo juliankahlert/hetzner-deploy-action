@@ -230,6 +230,7 @@ describe("src/index entrypoint", () => {
       certbotPort: undefined,
       containerImage: undefined,
       containerPort: undefined,
+      duckdns: undefined,
       execStart: undefined,
       firewallEnabled: false,
       firewallExtraPorts: undefined,
@@ -256,6 +257,7 @@ describe("src/index entrypoint", () => {
     const logs = infoMessages();
     expect(logs).toContain("  certbot:      false");
     expect(logs).toContain("  certbot_port: (not set)");
+    expect(logs).toContain("  duckdns:      (not set)");
     expect(logs).toContain("  service:      (not set)");
     expect(logs).toContain("  service_name: (not set)");
     expect(logs).toContain("  container_image: (not set)");
@@ -268,6 +270,49 @@ describe("src/index entrypoint", () => {
     expect(logs).toContain("  haproxy_fragment_name: (not set)");
     expect(logs).toContain("  firewall_enabled: false");
     expect(logs).toContain("  firewall_extra_ports: (not set)");
+  });
+
+  it("parses, masks, and logs provided duckdns input", async () => {
+    mockInputs({
+      duckdns: "duck-token:demo-subdomain",
+    });
+
+    await importEntrypoint();
+
+    expect(mocks.deployPipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        duckdns: {
+          token: "duck-token",
+          domain: "demo-subdomain",
+        },
+      }),
+    );
+    expect(mocks.core.setSecret).toHaveBeenCalledWith(
+      "duck-token:demo-subdomain",
+    );
+    expect(mocks.core.setSecret).toHaveBeenCalledWith("duck-token");
+
+    const logs = infoMessages();
+    expect(logs).toContain("  duckdns:      (provided)");
+    expect(logs).not.toContain("duck-token:demo-subdomain");
+    expect(logs).not.toContain("duck-token");
+  });
+
+  it("treats explicit empty duckdns input as not set", async () => {
+    mockInputs({
+      duckdns: "",
+    });
+
+    await importEntrypoint();
+
+    expect(mocks.deployPipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        duckdns: undefined,
+      }),
+    );
+
+    const logs = infoMessages();
+    expect(logs).toContain("  duckdns:      (not set)");
   });
 
   it("builds structured service config from flat defaults when service yaml is absent", async () => {

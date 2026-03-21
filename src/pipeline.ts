@@ -71,6 +71,11 @@ export const STAGE_ORDER: readonly StageName[] = [
 /*  Pipeline inputs                                                   */
 /* ------------------------------------------------------------------ */
 
+export interface DuckDnsConfig {
+  token: string;
+  domain: string;
+}
+
 /** Inputs consumed by the deploy pipeline. */
 export interface ActionInputs {
   hcloudToken: string;
@@ -80,6 +85,7 @@ export interface ActionInputs {
   serverType: string;
   ipv6Only: boolean;
   certbot: boolean;
+  duckdns?: DuckDnsConfig;
   publicKey: string;
   sshPrivateKey: string;
   sshUser: string;

@@ -1,6 +1,10 @@
 import * as core from "@actions/core";
 import { load } from "js-yaml";
-import { deployPipeline, type ActionInputs } from "./pipeline.js";
+import {
+  deployPipeline,
+  type ActionInputs,
+  type DuckDnsConfig,
+} from "./pipeline.js";
 import {
   mapKebabToCamel,
   VALID_SERVICE_KEYS,
@@ -90,6 +94,31 @@ function buildServiceConfig(raw: {
   };
 }
 
+function parseDuckDnsInput(input: string): DuckDnsConfig | undefined {
+  if (!input) {
+    return undefined;
+  }
+
+  const separatorIndex = input.indexOf(":");
+
+  if (separatorIndex === -1) {
+    throw new Error(
+      'INPUT_VALIDATION_ Invalid value for "duckdns". Must use the combined format "token:domain" when provided.',
+    );
+  }
+
+  const token = input.slice(0, separatorIndex);
+  const domain = input.slice(separatorIndex + 1);
+
+  if (!token || !domain) {
+    throw new Error(
+      'INPUT_VALIDATION_ Invalid value for "duckdns". Must use the combined format "token:domain" when provided.',
+    );
+  }
+
+  return { token, domain };
+}
+
 function parseInputs(): ActionInputs {
   // Collect raw string values — defaults come from action.yml exclusively.
   const execStart = core.getInput("exec_start");
@@ -103,6 +132,11 @@ function parseInputs(): ActionInputs {
   const hostPort = core.getInput("host_port");
   const route = core.getInput("route");
   const appPort = core.getInput("app_port");
+  const duckdns = core.getInput("duckdns");
+
+  if (duckdns) {
+    core.setSecret(duckdns);
+  }
 
   const parsedService = parseServiceInput(serviceYaml);
   validateServiceConfig(parsedService);
@@ -136,6 +170,7 @@ function parseInputs(): ActionInputs {
     hostPort,
     route,
     appPort,
+    ...(duckdns ? { duckdns } : {}),
     haproxyCfg: core.getInput("haproxy_cfg"),
     haproxyFragment: core.getInput("haproxy_fragment"),
     haproxyFragmentName: core.getInput("haproxy_fragment_name"),
@@ -145,6 +180,12 @@ function parseInputs(): ActionInputs {
 
   // Validate all non-secret inputs before any cloud API call.
   validateInputs(raw);
+
+  const parsedDuckDns = parseDuckDnsInput(duckdns);
+
+  if (parsedDuckDns) {
+    core.setSecret(parsedDuckDns.token);
+  }
 
   const service = buildServiceConfig({
     serviceName: flatServiceName,
@@ -163,6 +204,7 @@ function parseInputs(): ActionInputs {
     serverType: raw.serverType,
     ipv6Only: raw.ipv6Only === "true",
     certbot: raw.certbot === "true",
+    duckdns: parsedDuckDns,
     publicKey: core.getInput("public_key", { required: true }),
     sshPrivateKey: core.getInput("ssh_private_key", { required: true }),
     sshUser: raw.sshUser,
@@ -207,6 +249,7 @@ function logInputs(inputs: ActionInputs): void {
   core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
   core.info(`  certbot:      ${String(inputs.certbot)}`);
   core.info(`  certbot_port: ${inputs.certbotPort ?? "(not set)"}`);
+  core.info(`  duckdns:      ${inputs.duckdns ? "(provided)" : "(not set)"}`);
   core.info(`  ssh_user:     ${inputs.sshUser}`);
   core.info(`  service:      ${inputs.service ? "(provided)" : "(not set)"}`);
   core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);
