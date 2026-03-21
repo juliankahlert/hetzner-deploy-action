@@ -16,6 +16,7 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 - **Certbot ACME** — automatic Let's Encrypt integration via HAProxy; deploys a bundled certbot fragment that routes HTTP-01 challenges to a local certbot listener
 - **Firewall** — OS-aware firewall setup (UFW on Debian/Ubuntu, firewalld on Fedora) with sensible defaults and optional extra ports
 - **systemd service** — install and restart a systemd unit for non-container workloads
+- **DuckDNS dynamic DNS** — automatic DNS record updates via a systemd timer; keeps your `*.duckdns.org` subdomain pointed at the server
 - **IPv6-only support** — provision servers without a public IPv4 address
 
 ---
@@ -66,8 +67,9 @@ The action provisions a server via the Hetzner Cloud API, syncs your build artif
 | `certbot_port` | no | `8888` | Port on `127.0.0.1` where certbot's standalone HTTP-01 server listens. Rendered into the bundled certbot HAProxy fragment. Only meaningful when `certbot` is `true`. Must be an integer between 1 and 65535. |
 | `firewall_enabled` | no | `true` | Enable the firewall stage (UFW on Debian/Ubuntu, firewalld on Fedora). |
 | `firewall_extra_ports` | no | — | Comma-separated extra ports to allow, e.g. `8080, 8443`. |
+| `duckdns` | no | — | DuckDNS configuration in combined `token:domain` format. The token is a lowercase UUID; the domain is the bare subdomain label **without** the `.duckdns.org` suffix. Example: `${{ secrets.DUCKDNS_TOKEN }}:myhost`. Enables the DuckDNS stage. Store the token as a repository secret. |
 
-> **Secrets:** `hcloud_token`, `ssh_private_key`, and `public_key` contain sensitive material. Always store them as [encrypted secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) — never hard-code them in workflow files.
+> **Secrets:** `hcloud_token`, `ssh_private_key`, and `public_key` contain sensitive material. Always store them as [encrypted secrets](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions) — never hard-code them in workflow files. The `duckdns` input also contains a secret API token; the action automatically masks both the combined value and the extracted token from workflow logs, but you must still store the token portion as a secret (e.g. `DUCKDNS_TOKEN`) and reference it via `${{ secrets.DUCKDNS_TOKEN }}:mydomain`.
 
 ### Structured `service` input
 
@@ -142,7 +144,8 @@ The action executes a pipeline of ordered stages. Core stages always run; option
                              6. Podman Quadlet     (if container_image)
                              7. systemd unit       (if service.name, no container)
                              8. HAProxy + Certbot  (if haproxy_cfg, haproxy_fragment, or certbot)
-                             9. Firewall           (if firewall_enabled)
+                             9. DuckDNS            (if duckdns)
+                            10. Firewall           (if firewall_enabled)
 ```
 
 ### Stage activation rules
@@ -155,6 +158,7 @@ The action executes a pipeline of ordered stages. Core stages always run; option
 | podman | `container_image` is set |
 | systemd | `service.name` is set **and** `container_image` is absent |
 | haproxy | `haproxy_cfg`, `haproxy_fragment`, or `certbot` is set |
+| duckdns | `duckdns` is set |
 | firewall | `firewall_enabled` is `true` (default) |
 
 > **Note:** When `container_image` is set, the Podman Quadlet manages the service via systemd. The standalone systemd stage is skipped to avoid conflicts.
@@ -170,6 +174,83 @@ When `certbot=true`, the HAProxy stage extends its behavior to provision Let's E
 5. **Final reload** — the certbot fragment deployment performs the single `haproxy-frag` reload, activating both the custom and certbot fragments in one pass.
 
 > **Tip:** Set `certbot=true` without any `haproxy_fragment` when you only need ACME challenge routing. The action still deploys the base config and the certbot fragment, giving HAProxy a complete minimal configuration.
+
+### DuckDNS deployment flow
+
+When `duckdns` is set, the DuckDNS stage executes a six-phase deployment orchestration on the remote host:
+
+1. **Provision service user** — creates a `duckdns` system account (`useradd --system --no-create-home --shell /usr/sbin/nologin duckdns`) if it does not already exist.
+2. **Write configuration** — creates `/etc/duckdns/` and writes `/etc/duckdns/config.yaml` containing the token and domain.
+3. **Harden permissions** — sets `/etc/duckdns/` to mode `0700` and `config.yaml` to mode `0600`, both owned by `duckdns:duckdns`. Permission hardening failures are logged as warnings but do not abort the stage.
+4. **Upload updater script** — installs `/etc/duckdns/update.py` (a Python 3 script that reads the config and calls the DuckDNS HTTP API), sets mode `0755`, and assigns ownership to `duckdns:duckdns`.
+5. **Install systemd units** — writes `duckdns.service` and `duckdns.timer` to `/etc/systemd/system/`, runs `daemon-reload`, and enables the timer with `systemctl enable --now duckdns.timer`.
+6. **Initial update** — triggers `systemctl start duckdns.service` for an immediate DNS record update. If the initial update fails, a warning is emitted but the stage succeeds (the timer will retry).
+
+**Remote artifacts:**
+
+| Path | Mode | Owner | Purpose |
+|------|------|-------|---------|
+| `/etc/duckdns/` | `0700` | `duckdns` | Configuration directory |
+| `/etc/duckdns/config.yaml` | `0600` | `duckdns` | Token and domain (YAML key-value) |
+| `/etc/duckdns/update.py` | `0755` | `duckdns` | Python 3 updater script |
+| `/etc/systemd/system/duckdns.service` | — | `root` | Oneshot service unit (`User=duckdns`) |
+| `/etc/systemd/system/duckdns.timer` | — | `root` | Repeating timer unit |
+
+**Timer behavior:**
+
+| Parameter | Value |
+|-----------|-------|
+| `OnBootSec` | `0` — fires immediately on boot |
+| `OnUnitActiveSec` | `5min` — repeats every 5 minutes |
+| `AccuracySec` | `1min` — coalescing window |
+| `Persistent` | `true` — catches up missed runs after sleep/reboot |
+
+**Input validation:**
+
+The `duckdns` input is validated before any cloud API call:
+
+- The token must be a lowercase UUID (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+- The domain must be a valid DNS label (lowercase alphanumeric, internal hyphens allowed).
+- The domain must **not** include the `.duckdns.org` suffix.
+- The entire combined value and the extracted token are both masked from workflow logs via `core.setSecret()`.
+
+### DuckDNS troubleshooting
+
+**Verify DNS resolution:**
+
+```sh
+# Check that the DuckDNS subdomain resolves to your server's IP
+dig +short myhost.duckdns.org
+```
+
+**Test the DuckDNS API directly from the server:**
+
+```sh
+# Manual update check (use the actual token; response should be "OK")
+curl -s "https://www.duckdns.org/update?domains=myhost&token=YOUR_TOKEN&ip="
+```
+
+**Check timer and service status:**
+
+```sh
+# Verify the timer is active and the next trigger time
+sudo systemctl status duckdns.timer
+
+# Check the most recent service run result
+sudo systemctl status duckdns.service
+
+# View update logs
+sudo journalctl -u duckdns.service --no-pager -n 20
+```
+
+**Common issues:**
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `KO` response from DuckDNS API | Invalid token or domain | Verify the token UUID and subdomain label at [duckdns.org](https://www.duckdns.org) |
+| Timer not running | Deployment phase 5 failed | Re-run the workflow; check `systemctl status duckdns.timer` |
+| Permission denied on config | Phase 3 hardening failed | Run `sudo chown -R duckdns:duckdns /etc/duckdns && sudo chmod 0700 /etc/duckdns && sudo chmod 0600 /etc/duckdns/config.yaml` |
+| DNS not updating after deploy | Initial update (phase 6) failed | Check `journalctl -u duckdns.service`; the timer will retry within 5 minutes |
 
 ### IPv6 and runner compatibility
 
@@ -305,6 +386,25 @@ Enable ACME challenge routing without a custom fragment. The action deploys the 
     certbot:         'true'
 ```
 
+### DuckDNS dynamic DNS
+
+Point a `*.duckdns.org` subdomain at your server and keep it updated automatically. The `duckdns` input uses the combined `token:domain` format — the token is your DuckDNS API token (a lowercase UUID) and the domain is the bare subdomain label without `.duckdns.org`.
+
+```yaml
+- uses: julian-kahlert/hetzner-deploy-action@v1
+  with:
+    hcloud_token:    ${{ secrets.HCLOUD_TOKEN }}
+    ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+    public_key:      ${{ secrets.SSH_PUBLIC_KEY }}
+    server_name:     my-app
+    project_tag:     my-project
+    source_dir:      ./dist
+    target_dir:      /opt/app
+    duckdns:         '${{ secrets.DUCKDNS_TOKEN }}:myhost'
+```
+
+> **Note:** The domain value is the subdomain label only — write `myhost`, not `myhost.duckdns.org`. The action validates this and rejects values containing the `.duckdns.org` suffix.
+
 ### Full stack with HAProxy and firewall
 
 ```yaml
@@ -364,6 +464,7 @@ src/
     rsync.ts            # rsync file transfer
     podman.ts           # Podman Quadlet deployment
     haproxy.ts          # HAProxy config and fragment deployment
+    duckdns.ts          # DuckDNS dynamic DNS deployment (config, script, timer)
     firewall.ts         # OS-aware firewall configuration (UFW / firewalld)
     remoteSetup.ts      # Target directory and systemd unit setup
     packageInstall.ts   # Remote package installation
@@ -373,6 +474,9 @@ templates/
   quadlet.container     # Podman Quadlet unit template
   haproxy-base.cfg      # Base HAProxy global/defaults configuration
   haproxy-certbot.cfg   # Certbot ACME challenge HAProxy fragment template
+  duckdns-update.py     # DuckDNS Python updater script template
+  duckdns.service       # DuckDNS oneshot systemd service unit
+  duckdns.timer         # DuckDNS repeating timer unit (every 5 min)
 ```
 
 ### Build and test

@@ -46471,6 +46471,301 @@ function generateFragment(inputs) {
     return { fragment: finalFragment, certbotFragment };
 }
 //# sourceMappingURL=haproxyGenerator.js.map
+;// CONCATENATED MODULE: ./lib/deploy/duckdns.js
+
+
+
+
+
+/* ------------------------------------------------------------------ */
+/*  Error-prefix constants                                            */
+/* ------------------------------------------------------------------ */
+const DUCKDNS_USER = "DUCKDNS_USER";
+const DUCKDNS_CONFIG = "DUCKDNS_CONFIG";
+const DUCKDNS_PERMS = "DUCKDNS_PERMS";
+const DUCKDNS_SCRIPT = "DUCKDNS_SCRIPT";
+const DUCKDNS_UNIT = "DUCKDNS_UNIT";
+const DUCKDNS_TIMER = "DUCKDNS_TIMER";
+const DUCKDNS_INITIAL = "DUCKDNS_INITIAL";
+/* ------------------------------------------------------------------ */
+/*  Template fallbacks                                                */
+/* ------------------------------------------------------------------ */
+const DUCKDNS_UPDATE_SCRIPT_FALLBACK = `#!/usr/bin/env python3
+"""DuckDNS dynamic DNS updater."""
+
+import sys
+import urllib.parse
+import urllib.request
+
+CONFIG = "{{CONFIG_PATH}}"
+
+
+def log(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def strip_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def load_config(path: str) -> dict[str, str]:
+    config: dict[str, str] = {}
+
+    with open(path, encoding="utf-8") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            line = raw_line.strip()
+
+            if not line or line.startswith("#"):
+                continue
+
+            if ":" not in line:
+                raise ValueError(f"invalid config line {line_number}")
+
+            key, value = line.split(":", 1)
+            key = key.strip()
+            value = strip_quotes(value.strip())
+
+            if not key:
+                raise ValueError(f"invalid config line {line_number}")
+
+            config[key] = value
+
+    return config
+
+
+def update_duckdns(domain: str, token: str) -> str:
+    query = urllib.parse.urlencode({"domains": domain, "token": token, "ip": ""})
+    url = f"https://www.duckdns.org/update?{query}"
+
+    with urllib.request.urlopen(url, timeout=30) as response:
+        return response.read().decode("utf-8", errors="replace").strip()
+
+
+def main() -> int:
+    try:
+        config = load_config(CONFIG)
+    except FileNotFoundError:
+        log(f"duckdns update failed: config not found at {CONFIG}")
+        return 1
+    except OSError:
+        log("duckdns update failed: unable to read config")
+        return 1
+    except ValueError as error:
+        log(f"duckdns update failed: {error}")
+        return 1
+
+    domain = config.get("domain", "").strip()
+    token = config.get("token", "").strip()
+
+    if not domain or not token:
+        log("duckdns update failed: config requires domain and token")
+        return 1
+
+    try:
+        result = update_duckdns(domain, token)
+    except Exception as error:  # noqa: BLE001
+        log(f"duckdns update failed: {error.__class__.__name__}")
+        return 1
+
+    if result == "OK":
+        log(f"duckdns update succeeded for domain {domain}")
+        return 0
+
+    if result == "KO":
+        log(f"duckdns update failed for domain {domain}: KO")
+        return 1
+
+    log(f"duckdns update failed for domain {domain}: unexpected response {result!r}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+`;
+const DUCKDNS_SERVICE_FALLBACK = `[Unit]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=duckdns
+ExecStart=/usr/bin/python3 /etc/duckdns/update.py
+`;
+const DUCKDNS_TIMER_FALLBACK = `[Timer]
+OnBootSec=0
+OnUnitActiveSec=5min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+`;
+function templatePath(fileName) {
+    return external_node_path_.resolve(__dirname, "..", "..", "templates", fileName);
+}
+function readTemplate(fileName, fallback, errorPrefix) {
+    const resolvedPath = templatePath(fileName);
+    if (!external_node_fs_namespaceObject.existsSync(resolvedPath)) {
+        return fallback;
+    }
+    try {
+        return external_node_fs_namespaceObject.readFileSync(resolvedPath, "utf-8");
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${errorPrefix}: failed to read template ${fileName}: ${msg}`);
+    }
+}
+function renderYamlScalar(value) {
+    return JSON.stringify(value);
+}
+/** Render flat YAML config content for `/etc/duckdns/config.yaml`. */
+function renderConfig(token, domain) {
+    return `token: ${renderYamlScalar(token)}\ndomain: ${renderYamlScalar(domain)}\n`;
+}
+/** Render the DuckDNS update script with a resolved config path. */
+function renderScript(configPath) {
+    return readTemplate("duckdns-update.py", DUCKDNS_UPDATE_SCRIPT_FALLBACK, DUCKDNS_SCRIPT).replaceAll("{{CONFIG_PATH}}", configPath);
+}
+/** Render the DuckDNS systemd service unit. */
+function renderServiceUnit() {
+    return readTemplate("duckdns.service", DUCKDNS_SERVICE_FALLBACK, DUCKDNS_UNIT);
+}
+/** Render the DuckDNS systemd timer unit. */
+function renderTimerUnit() {
+    return readTemplate("duckdns.timer", DUCKDNS_TIMER_FALLBACK, DUCKDNS_TIMER);
+}
+const DUCKDNS_LOG_PREFIX = "[DUCKDNS]";
+const DUCKDNS_SERVICE_USER_NAME = "duckdns";
+const DUCKDNS_DIR = "/etc/duckdns";
+const DUCKDNS_CONFIG_PATH = "/etc/duckdns/config.yaml";
+const DUCKDNS_SCRIPT_PATH = "/etc/duckdns/update.py";
+const DUCKDNS_SERVICE_UNIT_PATH = "/etc/systemd/system/duckdns.service";
+const DUCKDNS_TIMER_UNIT_PATH = "/etc/systemd/system/duckdns.timer";
+function safeErrorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+function wrapDuckdnsError(prefix, message, error, includeCauseMessage = true) {
+    const detail = includeCauseMessage ? `: ${safeErrorMessage(error)}` : "";
+    const wrapped = new Error(`${prefix}: ${message}${detail}`);
+    Object.assign(wrapped, { cause: error });
+    return wrapped;
+}
+function heredocTeeCommand(remotePath, content, marker) {
+    const normalizedContent = content.endsWith("\n") ? content : `${content}\n`;
+    return `sudo tee ${shellQuote(remotePath)} > /dev/null << '${marker}'\n${normalizedContent}${marker}`;
+}
+/** Deploy DuckDNS configuration, updater script, and timer on the remote host. */
+async function deployDuckdns(opts) {
+    const { host, user, privateKey, token, domain, ipv6Only = false } = opts;
+    const result = {
+        domainUpdated: false,
+        timerInstalled: false,
+    };
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Starting DuckDNS deployment orchestration.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 1/6: ensuring service user.`);
+    try {
+        await ensureServiceUser({
+            host,
+            user,
+            privateKey,
+            serviceUser: DUCKDNS_SERVICE_USER_NAME,
+            ipv6Only,
+        });
+    }
+    catch (error) {
+        throw wrapDuckdnsError(DUCKDNS_USER, `failed to ensure service user ${DUCKDNS_SERVICE_USER_NAME}`, error);
+    }
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 1/6 complete.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 2/6: ensuring target directory and writing config.`);
+    try {
+        await ensureTargetDir({
+            host,
+            user,
+            privateKey,
+            targetDir: DUCKDNS_DIR,
+            ipv6Only,
+        });
+        await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, heredocTeeCommand(DUCKDNS_CONFIG_PATH, renderConfig(token, domain), "DUCKDNS_CONFIG_EOF"), ipv6Only));
+    }
+    catch (error) {
+        throw wrapDuckdnsError(DUCKDNS_CONFIG, `failed to prepare ${DUCKDNS_CONFIG_PATH}`, error, false);
+    }
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Config written to ${DUCKDNS_CONFIG_PATH}.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 2/6 complete.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 3/6: hardening permissions.`);
+    try {
+        await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, [
+            `sudo chown -R ${shellQuote(DUCKDNS_SERVICE_USER_NAME)}:${shellQuote(DUCKDNS_SERVICE_USER_NAME)} ${shellQuote(DUCKDNS_DIR)}`,
+            `sudo chmod 0700 ${shellQuote(DUCKDNS_DIR)}`,
+            `sudo chmod 0600 ${shellQuote(DUCKDNS_CONFIG_PATH)}`,
+        ].join(" && "), ipv6Only));
+        lib_core.info(`${DUCKDNS_LOG_PREFIX} Permission hardening complete.`);
+    }
+    catch (error) {
+        lib_core.warning(`${DUCKDNS_LOG_PREFIX} ${DUCKDNS_PERMS}: permission hardening failed; continuing: ${safeErrorMessage(error)}`);
+    }
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 3/6 complete.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 4/6: uploading updater script.`);
+    try {
+        await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, [
+            heredocTeeCommand(DUCKDNS_SCRIPT_PATH, renderScript(DUCKDNS_CONFIG_PATH), "DUCKDNS_SCRIPT_EOF"),
+            `sudo chmod 0755 ${shellQuote(DUCKDNS_SCRIPT_PATH)}`,
+            `sudo chown ${shellQuote(DUCKDNS_SERVICE_USER_NAME)}:${shellQuote(DUCKDNS_SERVICE_USER_NAME)} ${shellQuote(DUCKDNS_SCRIPT_PATH)}`,
+        ].join(" && "), ipv6Only));
+    }
+    catch (error) {
+        throw wrapDuckdnsError(DUCKDNS_SCRIPT, `failed to install updater script at ${DUCKDNS_SCRIPT_PATH}`, error);
+    }
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Updater script ready at ${DUCKDNS_SCRIPT_PATH}.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 4/6 complete.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 5/6: installing systemd service and timer units.`);
+    await withKeyFile(privateKey, async (keyPath) => {
+        try {
+            await sshExec(keyPath, user, host, heredocTeeCommand(DUCKDNS_SERVICE_UNIT_PATH, renderServiceUnit(), "DUCKDNS_SERVICE_UNIT_EOF"), ipv6Only);
+        }
+        catch (error) {
+            throw wrapDuckdnsError(DUCKDNS_UNIT, `failed to install service unit at ${DUCKDNS_SERVICE_UNIT_PATH}`, error);
+        }
+        try {
+            await sshExec(keyPath, user, host, heredocTeeCommand(DUCKDNS_TIMER_UNIT_PATH, renderTimerUnit(), "DUCKDNS_TIMER_UNIT_EOF"), ipv6Only);
+        }
+        catch (error) {
+            throw wrapDuckdnsError(DUCKDNS_TIMER, `failed to install timer unit at ${DUCKDNS_TIMER_UNIT_PATH}`, error);
+        }
+        try {
+            await sshExec(keyPath, user, host, "sudo systemctl daemon-reload", ipv6Only);
+        }
+        catch (error) {
+            throw wrapDuckdnsError(DUCKDNS_UNIT, "failed to reload systemd daemon", error);
+        }
+        try {
+            await sshExec(keyPath, user, host, "sudo systemctl enable --now duckdns.timer", ipv6Only);
+            result.timerInstalled = true;
+        }
+        catch (error) {
+            throw wrapDuckdnsError(DUCKDNS_TIMER, "failed to enable duckdns.timer", error);
+        }
+    });
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Timer enabled and active.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 5/6 complete.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 6/6: running initial update.`);
+    try {
+        await withKeyFile(privateKey, (keyPath) => sshExec(keyPath, user, host, "sudo systemctl start duckdns.service", ipv6Only));
+        result.domainUpdated = true;
+        lib_core.info(`${DUCKDNS_LOG_PREFIX} Initial DuckDNS update completed successfully.`);
+    }
+    catch (error) {
+        result.domainUpdated = false;
+        lib_core.warning(`${DUCKDNS_LOG_PREFIX} ${DUCKDNS_INITIAL}: initial service run failed; continuing: ${safeErrorMessage(error)}`);
+    }
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} Phase 6/6 complete.`);
+    lib_core.info(`${DUCKDNS_LOG_PREFIX} DuckDNS deployment complete. timerInstalled=${String(result.timerInstalled)} domainUpdated=${String(result.domainUpdated)}`);
+    return result;
+}
+//# sourceMappingURL=duckdns.js.map
 ;// CONCATENATED MODULE: ./lib/deploy/firewall.js
 
 
@@ -46614,6 +46909,7 @@ async function configureFirewall(options) {
 
 
 
+
 const pipeline_DEFAULT_CERTBOT_PORT = "8888";
 const DEFAULT_SIMPLIFIED_HOST_PORT = 443;
 const DEFAULT_SIMPLIFIED_ROUTE = "/*";
@@ -46632,6 +46928,7 @@ const STAGES = {
     podman: "podman",
     systemd: "systemd",
     haproxy: "haproxy",
+    duckdns: "duckdns",
     firewall: "firewall",
 };
 /** Ordered list of all stage labels for deterministic iteration. */
@@ -46642,6 +46939,7 @@ const STAGE_ORDER = [
     STAGES.podman,
     STAGES.systemd,
     STAGES.haproxy,
+    STAGES.duckdns,
     STAGES.firewall,
 ];
 /* ------------------------------------------------------------------ */
@@ -46690,6 +46988,8 @@ function activeStages(inputs) {
                     inputs.haproxyFragment ||
                     inputs.certbot ||
                     hasSimplifiedHaproxyInputs(inputs));
+            case STAGES.duckdns:
+                return Boolean(inputs.duckdns);
             case STAGES.firewall:
                 return Boolean(inputs.firewallEnabled);
         }
@@ -46768,6 +47068,7 @@ async function deployPipeline(inputs) {
     let setupResult = { unitInstalled: false, serviceRestarted: false };
     let podmanResult = { quadletUploaded: false, serviceRestarted: false };
     let haproxyResult = { configUploaded: false, serviceReloaded: false };
+    let duckdnsResult = { domainUpdated: false, timerInstalled: false };
     let firewallResult = { firewallEnabled: false, rulesApplied: 0 };
     for (let i = 0; i < stages.length; i++) {
         const stage = stages[i];
@@ -47021,6 +47322,22 @@ async function deployPipeline(inputs) {
                     }
                     lib_core.info("HAProxy configuration deployed and service reloaded.");
                     break;
+                case STAGES.duckdns:
+                    if (!inputs.duckdns) {
+                        throw new Error("duckdns input is required for duckdns deployment");
+                    }
+                    lib_core.info(`[DUCKDNS] Starting DuckDNS stage for domain "${inputs.duckdns.domain}".`);
+                    duckdnsResult = await deployDuckdns({
+                        host: server.ip,
+                        user: inputs.sshUser,
+                        privateKey: inputs.sshPrivateKey,
+                        token: inputs.duckdns.token,
+                        domain: inputs.duckdns.domain,
+                        ipv6Only: effectiveIpv6Only,
+                    });
+                    lib_core.info(`[DUCKDNS] Stage result: domainUpdated=${String(duckdnsResult.domainUpdated)} timerInstalled=${String(duckdnsResult.timerInstalled)}.`);
+                    lib_core.info("DuckDNS deployment completed successfully.");
+                    break;
                 case STAGES.firewall:
                     firewallResult = await configureFirewall({
                         host: server.ip,
@@ -47060,6 +47377,10 @@ async function deployPipeline(inputs) {
     if (stages.includes(STAGES.haproxy)) {
         lib_core.info(`  haproxy config:    ${haproxyResult.configUploaded ? "uploaded" : "skipped"}`);
         lib_core.info(`  haproxy reloaded:  ${haproxyResult.serviceReloaded ? "yes" : "no"}`);
+    }
+    if (stages.includes(STAGES.duckdns)) {
+        lib_core.info(`  duckdns updated:   ${duckdnsResult.domainUpdated ? "yes" : "no"}`);
+        lib_core.info(`  duckdns timer:     ${duckdnsResult.timerInstalled ? "installed" : "skipped"}`);
     }
     if (stages.includes(STAGES.firewall)) {
         lib_core.info(`  firewall enabled:  ${firewallResult.firewallEnabled ? "yes" : "no"}`);
