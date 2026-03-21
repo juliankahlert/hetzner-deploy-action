@@ -25,6 +25,7 @@ import {
 } from "./deploy/haproxy.js";
 import { compileFragment } from "./deploy/haproxyCompiler.js";
 import { generateFragment } from "./deploy/haproxyGenerator.js";
+import { deployDuckdns } from "./deploy/duckdns.js";
 import { configureFirewall } from "./deploy/firewall.js";
 import { waitForSsh, withKeyFile } from "./deploy/ssh.js";
 import type { OsStrategy } from "./deploy/osStrategy.js";
@@ -51,6 +52,7 @@ export const STAGES = {
   podman: "podman",
   systemd: "systemd",
   haproxy: "haproxy",
+  duckdns: "duckdns",
   firewall: "firewall",
 } as const;
 
@@ -64,6 +66,7 @@ export const STAGE_ORDER: readonly StageName[] = [
   STAGES.podman,
   STAGES.systemd,
   STAGES.haproxy,
+  STAGES.duckdns,
   STAGES.firewall,
 ];
 
@@ -179,6 +182,8 @@ export function activeStages(inputs: ActionInputs): StageName[] {
             inputs.certbot ||
             hasSimplifiedHaproxyInputs(inputs),
         );
+      case STAGES.duckdns:
+        return Boolean(inputs.duckdns);
       case STAGES.firewall:
         return Boolean(inputs.firewallEnabled);
     }
@@ -278,6 +283,7 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
   let setupResult = { unitInstalled: false, serviceRestarted: false };
   let podmanResult = { quadletUploaded: false, serviceRestarted: false };
   let haproxyResult = { configUploaded: false, serviceReloaded: false };
+  let duckdnsResult = { domainUpdated: false, timerInstalled: false };
   let firewallResult = { firewallEnabled: false, rulesApplied: 0 };
 
   for (let i = 0; i < stages.length; i++) {
@@ -624,6 +630,27 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
           core.info("HAProxy configuration deployed and service reloaded.");
           break;
 
+        case STAGES.duckdns:
+          if (!inputs.duckdns) {
+            throw new Error("duckdns input is required for duckdns deployment");
+          }
+          core.info(
+            `[DUCKDNS] Starting DuckDNS stage for domain "${inputs.duckdns.domain}".`,
+          );
+          duckdnsResult = await deployDuckdns({
+            host: server.ip,
+            user: inputs.sshUser,
+            privateKey: inputs.sshPrivateKey,
+            token: inputs.duckdns.token,
+            domain: inputs.duckdns.domain,
+            ipv6Only: effectiveIpv6Only,
+          });
+          core.info(
+            `[DUCKDNS] Stage result: domainUpdated=${String(duckdnsResult.domainUpdated)} timerInstalled=${String(duckdnsResult.timerInstalled)}.`,
+          );
+          core.info("DuckDNS deployment completed successfully.");
+          break;
+
         case STAGES.firewall:
           firewallResult = await configureFirewall({
             host: server.ip,
@@ -675,6 +702,14 @@ export async function deployPipeline(inputs: ActionInputs): Promise<void> {
     );
     core.info(
       `  haproxy reloaded:  ${haproxyResult.serviceReloaded ? "yes" : "no"}`,
+    );
+  }
+  if (stages.includes(STAGES.duckdns)) {
+    core.info(
+      `  duckdns updated:   ${duckdnsResult.domainUpdated ? "yes" : "no"}`,
+    );
+    core.info(
+      `  duckdns timer:     ${duckdnsResult.timerInstalled ? "installed" : "skipped"}`,
     );
   }
   if (stages.includes(STAGES.firewall)) {

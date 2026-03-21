@@ -71,6 +71,10 @@ vi.mock("../src/deploy/haproxy.js", () => ({
   ensureHaproxyFragService: vi.fn(),
 }));
 
+vi.mock("../src/deploy/duckdns.js", () => ({
+  deployDuckdns: vi.fn(),
+}));
+
 vi.mock("../src/deploy/firewall.js", () => ({
   configureFirewall: vi.fn(),
 }));
@@ -106,6 +110,7 @@ import {
   deployHaproxyFragmentWithoutReload,
   ensureHaproxyFragService,
 } from "../src/deploy/haproxy.js";
+import { deployDuckdns } from "../src/deploy/duckdns.js";
 import { configureFirewall } from "../src/deploy/firewall.js";
 import { detectOs } from "../src/deploy/osDetect.js";
 import { withKeyFile, waitForSsh } from "../src/deploy/ssh.js";
@@ -229,6 +234,10 @@ function trackCallOrder(): void {
     callOrder.push(STAGES.haproxy);
     return { configUploaded: true, serviceReloaded: true };
   });
+  vi.mocked(deployDuckdns).mockImplementation(async () => {
+    callOrder.push(STAGES.duckdns);
+    return { domainUpdated: true, timerInstalled: true };
+  });
   vi.mocked(configureFirewall).mockImplementation(async () => {
     callOrder.push(STAGES.firewall);
     return { firewallEnabled: true, rulesApplied: 4 };
@@ -287,6 +296,10 @@ beforeEach(() => {
     configUploaded: true,
     serviceReloaded: false,
   });
+  vi.mocked(deployDuckdns).mockResolvedValue({
+    domainUpdated: true,
+    timerInstalled: true,
+  });
   vi.mocked(generateFragment).mockReturnValue({
     fragment: GENERATED_PRIMARY_FRAGMENT,
     certbotFragment: undefined,
@@ -313,8 +326,8 @@ beforeEach(() => {
 // ===========================================================================
 
 describe("STAGE_ORDER", () => {
-  it("contains exactly 7 stages", () => {
-    expect(STAGE_ORDER).toHaveLength(7);
+  it("contains exactly 8 stages", () => {
+    expect(STAGE_ORDER).toHaveLength(8);
   });
 
   it("has the correct ordering", () => {
@@ -325,6 +338,7 @@ describe("STAGE_ORDER", () => {
       "podman",
       "systemd",
       "haproxy",
+      "duckdns",
       "firewall",
     ]);
   });
@@ -416,6 +430,25 @@ describe("activeStages", () => {
     expect(withFirewall).toContain(STAGES.firewall);
   });
 
+  it("includes duckdns when duckdns input is set", () => {
+    const stages = activeStages(
+      withInputs({
+        duckdns: {
+          token: "duck-token",
+          domain: "demo-subdomain",
+        },
+      }),
+    );
+
+    expect(stages).toContain(STAGES.duckdns);
+  });
+
+  it("excludes duckdns when duckdns input is absent", () => {
+    const stages = activeStages(BASE_INPUTS);
+
+    expect(stages).not.toContain(STAGES.duckdns);
+  });
+
   it("excludes firewall when firewallEnabled is explicitly false", () => {
     const stages = activeStages(withInputs({ firewallEnabled: false }));
 
@@ -428,6 +461,10 @@ describe("activeStages", () => {
         serviceName: "myapp",
         service: makeService(),
         haproxyCfg: "/etc/haproxy/haproxy.cfg",
+        duckdns: {
+          token: "duck-token",
+          domain: "demo-subdomain",
+        },
         firewallEnabled: true,
       }),
     );
@@ -439,6 +476,7 @@ describe("activeStages", () => {
       STAGES.rsyncDeploy,
       STAGES.systemd,
       STAGES.haproxy,
+      STAGES.duckdns,
       STAGES.firewall,
     ]);
   });
@@ -600,13 +638,17 @@ describe("deployPipeline — stage ordering", () => {
     expect(installSystemdUnit).not.toHaveBeenCalled();
   });
 
-  it("calls podman before haproxy and firewall when those stages are active", async () => {
+  it("calls duckdns after haproxy and before firewall when those stages are active", async () => {
     trackCallOrder();
 
     await deployPipeline(
       withInputs({
         containerImage: "docker.io/myapp:latest",
         haproxyCfg: "/etc/haproxy/haproxy.cfg",
+        duckdns: {
+          token: "duck-token",
+          domain: "demo-subdomain",
+        },
         firewallEnabled: true,
       }),
     );
@@ -617,6 +659,7 @@ describe("deployPipeline — stage ordering", () => {
       STAGES.rsyncDeploy,
       STAGES.podman,
       STAGES.haproxy,
+      STAGES.duckdns,
       STAGES.firewall,
     ]);
   });
@@ -1206,6 +1249,25 @@ describe("deployPipeline — conditional skipping", () => {
     expect(deployHaproxyFragment).toHaveBeenCalledOnce();
   });
 
+  it("skips duckdns stage when duckdns input is absent", async () => {
+    await deployPipeline(BASE_INPUTS);
+
+    expect(deployDuckdns).not.toHaveBeenCalled();
+  });
+
+  it("executes duckdns stage when duckdns input is present", async () => {
+    await deployPipeline(
+      withInputs({
+        duckdns: {
+          token: "duck-token",
+          domain: "demo-subdomain",
+        },
+      }),
+    );
+
+    expect(deployDuckdns).toHaveBeenCalledOnce();
+  });
+
   it("skips firewall stage when firewallEnabled is falsy", async () => {
     await deployPipeline(BASE_INPUTS);
 
@@ -1355,6 +1417,21 @@ describe("deployPipeline — error propagation", () => {
         }),
       ),
     ).rejects.toThrow(/^DEPLOY_PIPELINE_haproxy: fragment reload failed$/);
+  });
+
+  it("wraps duckdns failure with DEPLOY_PIPELINE_duckdns prefix", async () => {
+    vi.mocked(deployDuckdns).mockRejectedValueOnce(new Error("timer enable failed"));
+
+    await expect(
+      deployPipeline(
+        withInputs({
+          duckdns: {
+            token: "duck-token",
+            domain: "demo-subdomain",
+          },
+        }),
+      ),
+    ).rejects.toThrow(/^DEPLOY_PIPELINE_duckdns: timer enable failed$/);
   });
 
   it("wraps deferred fragment helper validation failure with DEPLOY_PIPELINE_haproxy prefix", async () => {
@@ -1691,6 +1768,26 @@ describe("deployPipeline — stage arguments", () => {
     });
   });
 
+  it("passes correct options to deployDuckdns when duckdns is set", async () => {
+    await deployPipeline(
+      withInputs({
+        duckdns: {
+          token: "duck-token",
+          domain: "demo-subdomain",
+        },
+      }),
+    );
+
+    expect(deployDuckdns).toHaveBeenCalledWith({
+      host: "1.2.3.4",
+      user: "deploy",
+      privateKey: "PRIVATE_KEY",
+      token: "duck-token",
+      domain: "demo-subdomain",
+      ipv6Only: false,
+    });
+  });
+
   it("passes firewall extraPorts from inputs", async () => {
     await deployPipeline(withInputs({ firewallEnabled: true, firewallExtraPorts: ["8080", "53/udp"] }));
 
@@ -1721,5 +1818,28 @@ describe("deployPipeline — stage arguments", () => {
       serviceName: "myapp",
       ipv6Only: false,
     });
+  });
+});
+
+describe("deployPipeline — summary output", () => {
+  it("logs duckdns summary lines when duckdns stage runs", async () => {
+    vi.mocked(deployDuckdns).mockResolvedValueOnce({
+      domainUpdated: true,
+      timerInstalled: false,
+    });
+
+    await deployPipeline(
+      withInputs({
+        duckdns: {
+          token: "duck-token",
+          domain: "demo-subdomain",
+        },
+      }),
+    );
+
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("duckdns updated:"));
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("duckdns timer:"));
+    expect(core.info).toHaveBeenCalledWith("  duckdns updated:   yes");
+    expect(core.info).toHaveBeenCalledWith("  duckdns timer:     skipped");
   });
 });
