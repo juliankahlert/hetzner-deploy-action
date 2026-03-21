@@ -47094,6 +47094,10 @@ function mapKebabToCamel(raw) {
 }
 const SERVICE_USERNAME_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$/;
 const SERVICE_WORKING_DIRECTORY_PATTERN = /^\/(?!.*\.\.)[a-zA-Z0-9._-][a-zA-Z0-9._/-]*$/;
+const DUCKDNS_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DUCKDNS_DOMAIN_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const ROUTE_PATH_ONLY_PATTERN = String.raw `\/[a-zA-Z0-9][a-zA-Z0-9._:@-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._:@-]*)*(?:\{,\/\*\*\})?`;
+const ROUTE_PATTERN = new RegExp(String.raw `^(?:\*|\/\*|${ROUTE_PATH_ONLY_PATTERN}|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$`);
 /** Allowlist patterns — each must match the entire value. */
 const rules = [
     {
@@ -47238,7 +47242,7 @@ const rules = [
     {
         field: "route",
         label: "route",
-        pattern: /^(?:\*|\/\*|\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*|https?:\/\/[a-zA-Z0-9][a-zA-Z0-9._/:{}*,@-]*)$/,
+        pattern: ROUTE_PATTERN,
         hint: 'Must be a simplified HAProxy route like "/*", "/hello{,/**}", "example.com", or "https://example.com/api{,/**}".',
         optional: true,
     },
@@ -47264,6 +47268,9 @@ const rules = [
         optional: true,
     },
 ];
+function throwDuckdnsValidationError(hint) {
+    throw new Error(`INPUT_VALIDATION_ Invalid value for "duckdns". ${hint}`);
+}
 /**
  * Validate user-supplied inputs against strict allowlists.
  * Throws immediately on the first violation so the action fails fast.
@@ -47298,6 +47305,22 @@ function validateInputs(inputs) {
         const appPort = Number(inputs.appPort);
         if (appPort < 1 || appPort > 65535) {
             throw new Error(`INPUT_VALIDATION_ Invalid value for "app_port": ${JSON.stringify(inputs.appPort)}. Must be an integer between 1 and 65535 when provided.`);
+        }
+    }
+    if (inputs.duckdns) {
+        const duckdnsParts = inputs.duckdns.split(":");
+        if (duckdnsParts.length !== 2 || !duckdnsParts[0] || !duckdnsParts[1]) {
+            throwDuckdnsValidationError('Must use the combined format "token:domain" when provided.');
+        }
+        const [token, domain] = duckdnsParts;
+        if (!DUCKDNS_TOKEN_PATTERN.test(token)) {
+            throwDuckdnsValidationError('Token must be a lowercase UUID in the combined format "token:domain".');
+        }
+        if (domain.endsWith(".duckdns.org")) {
+            throwDuckdnsValidationError('Domain must be the DuckDNS subdomain label only, without the ".duckdns.org" suffix.');
+        }
+        if (!DUCKDNS_DOMAIN_LABEL_PATTERN.test(domain)) {
+            throwDuckdnsValidationError('Domain must be a valid lowercase DNS label using only letters, digits, and internal hyphens.');
         }
     }
     const simplifiedHaproxyInputsActive = Boolean(inputs.appPort);
@@ -47385,6 +47408,21 @@ function buildServiceConfig(raw) {
         workingDirectory: merged.workingDirectory,
     };
 }
+function parseDuckDnsInput(input) {
+    if (!input) {
+        return undefined;
+    }
+    const separatorIndex = input.indexOf(":");
+    if (separatorIndex === -1) {
+        throw new Error('INPUT_VALIDATION_ Invalid value for "duckdns". Must use the combined format "token:domain" when provided.');
+    }
+    const token = input.slice(0, separatorIndex);
+    const domain = input.slice(separatorIndex + 1);
+    if (!token || !domain) {
+        throw new Error('INPUT_VALIDATION_ Invalid value for "duckdns". Must use the combined format "token:domain" when provided.');
+    }
+    return { token, domain };
+}
 function parseInputs() {
     // Collect raw string values — defaults come from action.yml exclusively.
     const execStart = lib_core.getInput("exec_start");
@@ -47398,6 +47436,10 @@ function parseInputs() {
     const hostPort = lib_core.getInput("host_port");
     const route = lib_core.getInput("route");
     const appPort = lib_core.getInput("app_port");
+    const duckdns = lib_core.getInput("duckdns");
+    if (duckdns) {
+        lib_core.setSecret(duckdns);
+    }
     const parsedService = parseServiceInput(serviceYaml);
     validateServiceConfig(parsedService);
     const validatedServiceName = parsedService?.name ?? flatServiceName;
@@ -47425,6 +47467,7 @@ function parseInputs() {
         hostPort,
         route,
         appPort,
+        ...(duckdns ? { duckdns } : {}),
         haproxyCfg: lib_core.getInput("haproxy_cfg"),
         haproxyFragment: lib_core.getInput("haproxy_fragment"),
         haproxyFragmentName: lib_core.getInput("haproxy_fragment_name"),
@@ -47433,6 +47476,10 @@ function parseInputs() {
     };
     // Validate all non-secret inputs before any cloud API call.
     validateInputs(raw);
+    const parsedDuckDns = parseDuckDnsInput(duckdns);
+    if (parsedDuckDns) {
+        lib_core.setSecret(parsedDuckDns.token);
+    }
     const service = buildServiceConfig({
         serviceName: flatServiceName,
         execStart: execStart || undefined,
@@ -47449,6 +47496,7 @@ function parseInputs() {
         serverType: raw.serverType,
         ipv6Only: raw.ipv6Only === "true",
         certbot: raw.certbot === "true",
+        duckdns: parsedDuckDns,
         publicKey: lib_core.getInput("public_key", { required: true }),
         sshPrivateKey: lib_core.getInput("ssh_private_key", { required: true }),
         sshUser: raw.sshUser,
@@ -47491,6 +47539,7 @@ function logInputs(inputs) {
     lib_core.info(`  ipv6_only:    ${String(inputs.ipv6Only)}`);
     lib_core.info(`  certbot:      ${String(inputs.certbot)}`);
     lib_core.info(`  certbot_port: ${inputs.certbotPort ?? "(not set)"}`);
+    lib_core.info(`  duckdns:      ${inputs.duckdns ? "(provided)" : "(not set)"}`);
     lib_core.info(`  ssh_user:     ${inputs.sshUser}`);
     lib_core.info(`  service:      ${inputs.service ? "(provided)" : "(not set)"}`);
     lib_core.info(`  service_name: ${inputs.serviceName ? "(provided)" : "(not set)"}`);
